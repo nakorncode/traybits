@@ -1,0 +1,14 @@
+bin/
+obj/
+artifacts/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+TestResults/
+*.nupkg
+*.msi
+*.exe
+*.zip
+*.log
