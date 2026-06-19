@@ -13,9 +13,10 @@ Initial scope:
 - `20-20-20 reminder`: eye-rest notifications.
 - `CapsLang`: CapsLock-based input-language switching.
 
-Do not assume these tools should be merged into one executable. First inspect
-the current code and release flow, then recommend the smallest durable repo
-shape that preserves working behavior.
+The current prototype uses Tauri 2, Rust, and SolidJS. Do not assume the
+existing .NET tools should be merged directly. First inspect the current code
+and release flow, then recommend the smallest durable porting path that
+preserves working behavior.
 
 ## Local Machine Context
 
@@ -27,15 +28,30 @@ Known related paths on this PC:
 
 `toastdeck` and `capslang-windows` are existing .NET Windows app projects with
 their own `AGENTS.md`, release scripts, assets, and build outputs. Read their
-local instructions before copying or modifying code.
+local instructions before porting behavior.
+
+## Current Stack
+
+- Tauri 2 desktop app.
+- Rust native backend under `src-tauri`.
+- SolidJS frontend under `src`.
+- pnpm package management.
+
+The app currently has two windows:
+
+- `main`: PowerToys-style utility shell.
+- `toast`: transparent frameless always-on-top overlay for desktop toasts.
+
+Rust emits toast payloads to the `toast` window with Tauri events. Keep this
+bridge shape unless a better native constraint appears.
 
 ## Working Style
 
 - Keep changes small and reviewable.
 - Prefer PowerShell commands on Windows.
-- Prefer `pnpm` only for JavaScript projects; current related tools are .NET.
-- Do not introduce Electron, Tauri, or another app framework without comparing
-  it against the current .NET/native Windows approach.
+- Use `pnpm` for this repository's frontend commands.
+- Do not introduce Electron or another app framework without comparing it
+  against the current Tauri/Rust approach.
 - Treat tray behavior, startup registration, notification permissions, keyboard
   hooks, and installer identity as user-impacting surfaces. Inspect existing
   behavior before changing them.
@@ -54,18 +70,36 @@ local instructions before copying or modifying code.
 
 Use focused checks for the touched surface.
 
-For existing .NET utility projects, prefer their local scripts first, such as:
+For this Tauri prototype, use:
+
+```powershell
+pnpm build
+cargo check --manifest-path .\src-tauri\Cargo.toml
+pnpm tauri build --no-bundle
+```
+
+For related .NET utility projects, prefer their local scripts first, such as:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-build.ps1
 ```
 
-If a utility lacks scripts, use targeted .NET commands such as:
-
-```powershell
-dotnet build
-```
-
 Do not run installer builds, release packaging, or broad UI/browser automation
 unless the task requires it or the user explicitly asks.
 
+## Windows Native Spikes
+
+Real notification capture should be proven before porting ToastDesk:
+
+- Use `Windows.UI.Notifications.Management.UserNotificationListener`.
+- Request access from a UI-owned path.
+- Subscribe to `NotificationChanged`.
+- Sync current notifications with `GetNotificationsAsync(NotificationKinds.Toast)`.
+- Expect app identity, manifest capability, and user permission issues.
+
+CapsLang behavior should stay Rust-owned:
+
+- Low-level keyboard hook or a safer Windows-native alternative.
+- Explicit handling for real CapsLock on/off behavior.
+- No broad keystroke logging.
+- UI only controls settings and displays state.
