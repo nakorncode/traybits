@@ -491,7 +491,6 @@ button {
 }
 
 .toast-stage.debug-overlay {
-  justify-content: center;
   border: 2px solid #2563eb;
   background: #ffffff;
   pointer-events: auto;
@@ -516,6 +515,10 @@ button {
 .overlay-debug-card span {
   color: #4b5563;
   font-size: 13px;
+}
+
+.overlay-debug-card .overlay-debug-error {
+  color: #b42318;
 }
 
 .toast-card {

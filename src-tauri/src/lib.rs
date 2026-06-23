@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, Monitor, PhysicalPosition, State, WindowEvent,
+    AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, State, WindowEvent,
 };
 
 const TRAY_ID: &str = "main";
@@ -655,6 +655,10 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
             logical_height,
             margin,
         );
+        let _ = window.set_size(PhysicalSize::new(
+            logical_width.round() as u32,
+            logical_height.round() as u32,
+        ));
         let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
     }
 

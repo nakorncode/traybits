@@ -295,9 +295,6 @@ function MainApp(props: ParentProps) {
         ...items.filter((item) => item.id !== notification.id),
       ]);
       setNotificationStatus("Overlay debug notification was added to the shared store.");
-      toast.success("Overlay store-poll test queued", {
-        description: "The overlay window should pull this notification from Rust state.",
-      });
     } catch (error) {
       setNotificationError(error instanceof Error ? error.message : String(error));
     }
@@ -803,6 +800,7 @@ function ToastOverlay() {
   const [toasts, setToasts] = createSignal<AppNotification[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>();
   const [lastPollAt, setLastPollAt] = createSignal<string>();
+  const [lastPollError, setLastPollError] = createSignal<string>();
   const announcedIds = new Set<string>();
   let initialSyncDone = false;
 
@@ -834,6 +832,7 @@ function ToastOverlay() {
       const visible = latest.filter((notification) => !notification.silent).slice(0, 4);
       setSettings(appSettings);
       setLastPollAt(new Date().toLocaleTimeString());
+      setLastPollError(undefined);
 
       if (!initialSyncDone) {
         for (const notification of visible) {
@@ -850,8 +849,8 @@ function ToastOverlay() {
       if (visible.length === 0) {
         hideWhenEmpty();
       }
-    } catch {
-      // The overlay is diagnostic UI; keep the last rendered state if a poll fails.
+    } catch (error) {
+      setLastPollError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -882,13 +881,20 @@ function ToastOverlay() {
   return (
     <div
       class="toast-stage"
-      classList={{ "debug-overlay": (settings()?.notificationOverlayDebugVisible ?? true) && toasts().length === 0 }}
+      classList={{ "debug-overlay": settings()?.notificationOverlayDebugVisible ?? true }}
     >
-      <Show when={(settings()?.notificationOverlayDebugVisible ?? true) && toasts().length === 0}>
+      <Show when={settings()?.notificationOverlayDebugVisible ?? true}>
         <div class="overlay-debug-card">
           <strong>TrayBits overlay debug</strong>
           <span>Transparent overlay window is visible.</span>
           <span>Store polling is active{lastPollAt() ? `, last checked ${lastPollAt()}` : ""}.</span>
+          <span>Visible notifications in overlay store: {toasts().length}</span>
+          <Show when={toasts()[0]}>
+            {(notification) => <span>Newest: {notification().title}</span>}
+          </Show>
+          <Show when={lastPollError()}>
+            {(error) => <span class="overlay-debug-error">Poll error: {error()}</span>}
+          </Show>
         </div>
       </Show>
       <Toaster
