@@ -1,47 +1,31 @@
 # Sound Assets
 
-TrayBits bundles short notification sounds from multiple free/open sources so
-the presets have distinct tone, texture, and authorship.
+TrayBits bundles selected mobile-style notification tones from the Android Open
+Source Project sound set. These replace the earlier generated, OpenCode,
+Kenney, and Mixkit presets because the previous set did not have enough
+notification character.
 
-## OpenCode Notifier presets
+## AOSP notification presets
 
-Source: `@mohak34/opencode-notifier` version `0.2.8`
+Source: Android Open Source Project, `platform/frameworks/base`,
+`data/sounds/notifications/ogg`
 
-- Repository: https://github.com/mohak34/opencode-notifier
-- Package: https://www.npmjs.com/package/@mohak34/opencode-notifier
-- License: MIT
+- Source browser: https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/data/sounds/notifications/ogg/
+- License overview: https://source.android.com/license
+- License: Apache License 2.0 for the Android platform unless a file states a different license.
 
-Bundled files:
-
-- `opencode-complete.wav`
-- `opencode-permission.wav`
-- `opencode-question.wav`
-- `opencode-error.wav`
-- `opencode-subagent-complete.wav`
-
-## Kenney Interface Sounds presets
-
-Source: Kenney Interface Sounds
-
-- Official page: https://kenney.nl/assets/interface-sounds
-- Retrieval mirror used for selected WAV files: https://github.com/Calinou/kenney-ui-audio
-- License: Creative Commons CC0
+The original AOSP files are OGG. TrayBits stores converted mono WAV files so
+the existing Windows `PlaySoundW` playback path can use them directly.
 
 Bundled files:
 
-- `kenney-switch-2.wav`
-- `kenney-switch-20.wav`
-- `kenney-click-3.wav`
-- `kenney-rollover-4.wav`
-
-## Mixkit Classic Interface preset
-
-Source: Mixkit, `Software interface start`
-
-- Source page: https://mixkit.co/free-sound-effects/notification/
-- License: Mixkit Sound Effects Free License
-- License page: https://mixkit.co/license/
-
-Bundled file:
-
-- `traybits-notification.wav`
+- `aosp-argon.wav`
+- `aosp-ceres.wav`
+- `aosp-cobalt.wav`
+- `aosp-helium.wav`
+- `aosp-krypton.wav`
+- `aosp-polaris.wav`
+- `aosp-procyon.wav`
+- `aosp-radon.wav`
+- `aosp-spica.wav`
+- `aosp-vega.wav`

@@ -8,7 +8,7 @@ use tauri::{
 
 const TRAY_ID: &str = "main";
 const SETTINGS_FILE: &str = "settings.json";
-const DEFAULT_NOTIFICATION_SOUND_PRESET: &str = "opencode-complete";
+const DEFAULT_NOTIFICATION_SOUND_PRESET: &str = "aosp-argon";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,54 +20,54 @@ struct NotificationSoundPreset {
 
 const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
     NotificationSoundPreset {
-        id: "opencode-complete",
-        label: "OpenCode Complete",
-        file: "opencode-complete.wav",
+        id: "aosp-argon",
+        label: "AOSP Argon",
+        file: "aosp-argon.wav",
     },
     NotificationSoundPreset {
-        id: "opencode-permission",
-        label: "OpenCode Permission",
-        file: "opencode-permission.wav",
+        id: "aosp-ceres",
+        label: "AOSP Ceres",
+        file: "aosp-ceres.wav",
     },
     NotificationSoundPreset {
-        id: "opencode-question",
-        label: "OpenCode Question",
-        file: "opencode-question.wav",
+        id: "aosp-cobalt",
+        label: "AOSP Cobalt",
+        file: "aosp-cobalt.wav",
     },
     NotificationSoundPreset {
-        id: "opencode-error",
-        label: "OpenCode Error",
-        file: "opencode-error.wav",
+        id: "aosp-helium",
+        label: "AOSP Helium",
+        file: "aosp-helium.wav",
     },
     NotificationSoundPreset {
-        id: "opencode-subagent-complete",
-        label: "OpenCode Subagent",
-        file: "opencode-subagent-complete.wav",
+        id: "aosp-krypton",
+        label: "AOSP Krypton",
+        file: "aosp-krypton.wav",
     },
     NotificationSoundPreset {
-        id: "kenney-switch-soft",
-        label: "Kenney Soft Switch",
-        file: "kenney-switch-2.wav",
+        id: "aosp-polaris",
+        label: "AOSP Polaris",
+        file: "aosp-polaris.wav",
     },
     NotificationSoundPreset {
-        id: "kenney-switch-bright",
-        label: "Kenney Bright Switch",
-        file: "kenney-switch-20.wav",
+        id: "aosp-procyon",
+        label: "AOSP Procyon",
+        file: "aosp-procyon.wav",
     },
     NotificationSoundPreset {
-        id: "kenney-click",
-        label: "Kenney Click",
-        file: "kenney-click-3.wav",
+        id: "aosp-radon",
+        label: "AOSP Radon",
+        file: "aosp-radon.wav",
     },
     NotificationSoundPreset {
-        id: "kenney-rollover",
-        label: "Kenney Rollover",
-        file: "kenney-rollover-4.wav",
+        id: "aosp-spica",
+        label: "AOSP Spica",
+        file: "aosp-spica.wav",
     },
     NotificationSoundPreset {
-        id: "mixkit-classic-interface",
-        label: "Mixkit Classic Interface",
-        file: "traybits-notification.wav",
+        id: "aosp-vega",
+        label: "AOSP Vega",
+        file: "aosp-vega.wav",
     },
 ];
 
@@ -734,7 +734,7 @@ fn notification_sound_preset(id: &str) -> Option<&'static NotificationSoundPrese
 fn default_notification_sound_file() -> &'static str {
     notification_sound_preset(DEFAULT_NOTIFICATION_SOUND_PRESET)
         .map(|preset| preset.file)
-        .unwrap_or("opencode-complete.wav")
+        .unwrap_or("aosp-argon.wav")
 }
 
 fn show_toast_window(app: &AppHandle) -> Result<(), String> {
