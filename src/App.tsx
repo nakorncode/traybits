@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { A, Navigate, Route, Router, useLocation } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -38,6 +39,7 @@ type AppSettings = {
 
 const tools: Array<{
   id: ToolId;
+  path: string;
   name: string;
   description: string;
   glyph: string;
@@ -45,6 +47,7 @@ const tools: Array<{
 }> = [
   {
     id: "persistent-notifications",
+    path: "/notifications",
     name: "Persistent Notifications",
     description: "Keep Windows notifications visible as desktop cards until dismissed or handled.",
     glyph: "N",
@@ -52,6 +55,7 @@ const tools: Array<{
   },
   {
     id: "eye-rest",
+    path: "/eye-rest",
     name: "Eye Rest Reminder",
     description: "Show periodic 20-20-20 reminders for long desktop sessions.",
     glyph: "20",
@@ -59,6 +63,7 @@ const tools: Array<{
   },
   {
     id: "caps-lock-language-switch",
+    path: "/caps-lock-language-switch",
     name: "Caps Lock Language Switch",
     description: "Use Caps Lock as a quick input-language switch while preserving clear lock behavior.",
     glyph: "C",
@@ -66,6 +71,7 @@ const tools: Array<{
   },
   {
     id: "settings",
+    path: "/settings",
     name: "Settings",
     description: "Suite-wide startup, privacy, and release controls.",
     glyph: "S",
@@ -81,11 +87,15 @@ function App() {
     return <ToastOverlay />;
   }
 
-  return <MainApp />;
+  return (
+    <Router>
+      <MainApp />
+    </Router>
+  );
 }
 
 function MainApp() {
-  const [activeTool, setActiveTool] = createSignal<ToolId>("persistent-notifications");
+  const location = useLocation();
   const [listenerStatus, setListenerStatus] = createSignal<NotificationListenerStatus>();
   const [settings, setSettings] = createSignal<AppSettings>();
   const [settingsError, setSettingsError] = createSignal<string>();
@@ -95,7 +105,9 @@ function MainApp() {
     setSettings(await invoke<AppSettings>("get_app_settings"));
   });
 
-  const active = createMemo(() => tools.find((tool) => tool.id === activeTool()) ?? tools[0]);
+  const active = createMemo(
+    () => tools.find((tool) => tool.path === location.pathname) ?? tools[0],
+  );
 
   async function pushToast(tone: string) {
     await invoke("push_demo_toast", { tone });
@@ -143,17 +155,17 @@ function MainApp() {
         <nav class="tool-nav" aria-label="Utilities">
           <For each={tools}>
             {(tool) => (
-              <button
-                classList={{ selected: activeTool() === tool.id }}
-                onClick={() => setActiveTool(tool.id)}
-                type="button"
+              <A
+                activeClass="selected"
+                href={tool.path}
+                end
               >
                 <span class="nav-glyph">{tool.glyph}</span>
                 <span>
                   <strong>{tool.name}</strong>
                   <small>{tool.status}</small>
                 </span>
-              </button>
+              </A>
             )}
           </For>
         </nav>
@@ -170,27 +182,35 @@ function MainApp() {
           </button>
         </header>
 
-        <Show when={activeTool() === "persistent-notifications"}>
-          <PersistentNotificationsPanel pushToast={pushToast} listenerStatus={listenerStatus()} />
-        </Show>
-        <Show when={activeTool() === "eye-rest"}>
-          <EyeRestPanel pushToast={pushToast} />
-        </Show>
-        <Show when={activeTool() === "caps-lock-language-switch"}>
-          <CapsLockLanguageSwitchPanel
-            pushToast={pushToast}
-            settings={settings()?.capsLockLanguageSwitch}
-            updateSettings={updateCapsLockSettings}
-            settingsError={settingsError()}
-          />
-        </Show>
-        <Show when={activeTool() === "settings"}>
-          <SettingsPanel
-            settings={settings()}
-            updateSettings={updateSettings}
-            settingsError={settingsError()}
-          />
-        </Show>
+        <Route path="/" component={() => <Navigate href="/notifications" />} />
+        <Route
+          path="/notifications"
+          component={() => (
+            <PersistentNotificationsPanel pushToast={pushToast} listenerStatus={listenerStatus()} />
+          )}
+        />
+        <Route path="/eye-rest" component={() => <EyeRestPanel pushToast={pushToast} />} />
+        <Route
+          path="/caps-lock-language-switch"
+          component={() => (
+            <CapsLockLanguageSwitchPanel
+              pushToast={pushToast}
+              settings={settings()?.capsLockLanguageSwitch}
+              updateSettings={updateCapsLockSettings}
+              settingsError={settingsError()}
+            />
+          )}
+        />
+        <Route
+          path="/settings"
+          component={() => (
+            <SettingsPanel
+              settings={settings()}
+              updateSettings={updateSettings}
+              settingsError={settingsError()}
+            />
+          )}
+        />
       </section>
     </main>
   );

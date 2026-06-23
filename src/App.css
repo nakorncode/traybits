@@ -94,7 +94,7 @@ button {
   gap: 4px;
 }
 
-.tool-nav button {
+.tool-nav a {
   display: grid;
   grid-template-columns: 34px 1fr;
   gap: 10px;
@@ -104,15 +104,16 @@ button {
   border-radius: 6px;
   color: #272a33;
   background: transparent;
+  text-decoration: none;
   text-align: left;
   cursor: pointer;
 }
 
-.tool-nav button:hover {
+.tool-nav a:hover {
   background: #f1f2f6;
 }
 
-.tool-nav button.selected {
+.tool-nav a.selected {
   background: #e9f0ff;
   color: #1646a7;
 }
@@ -464,7 +465,7 @@ button {
   }
 
   .brand div:not(.brand-mark),
-  .tool-nav button span:not(.nav-glyph) {
+  .tool-nav a span:not(.nav-glyph) {
     display: none;
   }
 
@@ -472,7 +473,7 @@ button {
     align-items: center;
   }
 
-  .tool-nav button {
+  .tool-nav a {
     grid-template-columns: 34px;
   }
 
