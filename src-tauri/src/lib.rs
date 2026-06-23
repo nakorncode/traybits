@@ -2175,7 +2175,9 @@ mod language_indicator {
             },
             UI::{
                 Accessibility::{
-                    CUIAutomation, IUIAutomation, IUIAutomationTextPattern2, UIA_TextPattern2Id,
+                    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
+                    IUIAutomationTextPattern2, IUIAutomationTextRange, UIA_TextPattern2Id,
+                    UIA_TextPatternId,
                 },
                 Input::KeyboardAndMouse::{GetKeyboardLayout, GetKeyboardLayoutList, HKL},
                 WindowsAndMessaging::{
@@ -2398,16 +2400,19 @@ mod language_indicator {
                 Ok(element) => element,
                 Err(error) => return (None, format!("GetFocusedElement failed: {error}")),
             };
-            let pattern: IUIAutomationTextPattern2 =
-                match element.GetCurrentPatternAs(UIA_TextPattern2Id) {
-                    Ok(pattern) => pattern,
-                    Err(error) => {
-                        return (
-                            None,
-                            format!("Focused element has no TextPattern2: {error}"),
-                        )
-                    }
-                };
+            let text_pattern2: Result<IUIAutomationTextPattern2, _> =
+                element.GetCurrentPatternAs(UIA_TextPattern2Id);
+            let pattern = match text_pattern2 {
+                Ok(pattern) => pattern,
+                Err(error) => {
+                    let (fallback_position, fallback_message) =
+                        uia_text_pattern_selection_position(&element);
+                    return (
+                        fallback_position,
+                        format!("TextPattern2 unavailable: {error}. {fallback_message}"),
+                    );
+                }
+            };
             let mut is_active = windows::core::BOOL(0);
             let range = match pattern.GetCaretRange(&mut is_active) {
                 Ok(range) => range,
@@ -2441,6 +2446,75 @@ mod language_indicator {
                 message,
             )
         }
+    }
+
+    fn uia_text_pattern_selection_position(
+        element: &IUIAutomationElement,
+    ) -> (Option<IndicatorPosition>, String) {
+        unsafe {
+            let pattern: IUIAutomationTextPattern =
+                match element.GetCurrentPatternAs(UIA_TextPatternId) {
+                    Ok(pattern) => pattern,
+                    Err(error) => {
+                        return (None, format!("TextPattern unavailable: {error}"));
+                    }
+                };
+            let selection = match pattern.GetSelection() {
+                Ok(selection) => selection,
+                Err(error) => return (None, format!("TextPattern.GetSelection failed: {error}")),
+            };
+            let selection_count = match selection.Length() {
+                Ok(selection_count) => selection_count,
+                Err(error) => return (None, format!("TextPattern selection length failed: {error}")),
+            };
+            if selection_count <= 0 {
+                return (None, "TextPattern selection array is empty.".into());
+            }
+            let range = match selection.GetElement(0) {
+                Ok(range) => range,
+                Err(error) => {
+                    return (
+                        None,
+                        format!("TextPattern selection range access failed: {error}"),
+                    )
+                }
+            };
+            match text_range_position(&range, "UI Automation TextPattern selection") {
+                (Some(position), message) => (
+                    Some(position),
+                    format!("TextPattern selection count={selection_count}. {message}"),
+                ),
+                (None, message) => (
+                    None,
+                    format!("TextPattern selection count={selection_count}. {message}"),
+                ),
+            }
+        }
+    }
+
+    fn text_range_position(
+        range: &IUIAutomationTextRange,
+        source: &'static str,
+    ) -> (Option<IndicatorPosition>, String) {
+        let rectangles = match unsafe { range.GetBoundingRectangles() } {
+            Ok(rectangles) => rectangles,
+            Err(error) => return (None, format!("GetBoundingRectangles failed: {error}")),
+        };
+        let Some(first) = first_uia_text_rectangle(rectangles) else {
+            return (None, "Text range returned no bounding rectangle.".into());
+        };
+        (
+            Some(IndicatorPosition {
+                x: first.x.round() as i32 + first.width.max(1.0).round() as i32 + 8,
+                y: first.y.round() as i32 + first.height.max(1.0).round() as i32 + 8,
+                caret_available: true,
+                source,
+            }),
+            format!(
+                "Text range rectangle x={} y={} width={} height={}.",
+                first.x, first.y, first.width, first.height
+            ),
+        )
     }
 
     #[derive(Clone, Copy)]
