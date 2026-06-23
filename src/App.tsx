@@ -1,6 +1,14 @@
+import { Navigate, Route, Router } from "@solidjs/router";
 import "solid-sonner/styles.css";
 import "./App.css";
-import { MainApp } from "./MainApp";
+import {
+  CapsLockLanguageSwitchRoute,
+  CurrentLanguageIndicatorRoute,
+  EyeRestRoute,
+  MainApp,
+  PersistentNotificationsRoute,
+  SettingsRoute,
+} from "./MainApp";
 import { EyeRestOverlay } from "./overlays/EyeRestOverlay";
 import { LanguageIndicatorOverlay } from "./overlays/LanguageIndicatorOverlay";
 import { ToastOverlay } from "./overlays/ToastOverlay";
@@ -25,7 +33,16 @@ function App() {
   }
 
   delete document.documentElement.dataset.view;
-  return <MainApp />;
+  return (
+    <Router root={MainApp}>
+      <Route path="/" component={() => <Navigate href="/notifications" />} />
+      <Route path="/notifications" component={PersistentNotificationsRoute} />
+      <Route path="/eye-rest" component={EyeRestRoute} />
+      <Route path="/caps-lock-language-switch" component={CapsLockLanguageSwitchRoute} />
+      <Route path="/current-language-indicator" component={CurrentLanguageIndicatorRoute} />
+      <Route path="/settings" component={SettingsRoute} />
+    </Router>
+  );
 }
 
 export default App;

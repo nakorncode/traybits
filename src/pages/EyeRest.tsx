@@ -1,4 +1,4 @@
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { formatDuration } from "../utils";

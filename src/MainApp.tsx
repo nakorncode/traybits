@@ -1,4 +1,5 @@
-import { For, Match, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { type ParentProps, For, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { A, useLocation } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { tools } from "./constants";
@@ -10,17 +11,8 @@ import { CurrentLanguageIndicatorPanel } from "./pages/CurrentLanguageIndicator"
 import { SettingsPanel } from "./pages/Settings";
 import type { AppNotification, AppSettings, NotificationCaptureStatus, NotificationListenerStatus, NotificationSoundPreset, OverlayMonitorOption, PreviewNotificationResult } from "./types";
 
-function normalizeToolPath(path: string) {
-  return tools.some((tool) => tool.path === path) ? path : "/notifications";
-}
-
-function initialToolPath() {
-  const hashPath = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
-  return normalizeToolPath(hashPath);
-}
-
-export function MainApp() {
-  const [currentPath, setCurrentPath] = createSignal(initialToolPath());
+export function MainApp(props: ParentProps) {
+  const location = useLocation();
   const [listenerStatus, setListenerStatus] = createSignal<NotificationListenerStatus>();
   const [settings, setSettings] = createSignal<AppSettings>();
   const [settingsError, setSettingsError] = createSignal<string>();
@@ -30,12 +22,6 @@ export function MainApp() {
   const [overlayMonitors, setOverlayMonitors] = createSignal<OverlayMonitorOption[]>([]);
   const [notifications, setNotifications] = createSignal<AppNotification[]>([]);
   const [captureStatus, setCaptureStatus] = createSignal<NotificationCaptureStatus>();
-
-  onMount(() => {
-    const syncFromHash = () => setCurrentPath(initialToolPath());
-    window.addEventListener("hashchange", syncFromHash);
-    onCleanup(() => window.removeEventListener("hashchange", syncFromHash));
-  });
 
   onMount(async () => {
     const [listener, appSettings, notificationItems, status, monitors, soundPresets] = await Promise.all([
@@ -71,15 +57,7 @@ export function MainApp() {
     });
   });
 
-  const active = createMemo(() => tools.find((tool) => tool.path === currentPath()) ?? tools[0]);
-
-  function navigateTo(path: string) {
-    const nextPath = normalizeToolPath(path);
-    setCurrentPath(nextPath);
-    if (window.location.hash !== `#${nextPath}`) {
-      window.location.hash = nextPath;
-    }
-  }
+  const active = createMemo(() => tools.find((tool) => tool.path === location.pathname) ?? tools[0]);
 
   async function pushToast(tone: string) {
     await invoke("push_demo_toast", { tone });
@@ -177,17 +155,13 @@ export function MainApp() {
           <nav class="tool-nav" aria-label="Utilities">
             <For each={tools}>
               {(tool) => (
-                <button
-                  type="button"
-                  classList={{ selected: currentPath() === tool.path }}
-                  onClick={() => navigateTo(tool.path)}
-                >
+                <A activeClass="selected" href={tool.path} end>
                   <span class="nav-glyph">{tool.glyph}</span>
                   <span>
                     <strong>{tool.name}</strong>
                     <small>{tool.status}</small>
                   </span>
-                </button>
+                </A>
               )}
             </For>
           </nav>
@@ -204,23 +178,7 @@ export function MainApp() {
             </button>
           </header>
 
-          <Switch fallback={<PersistentNotificationsRoute />}>
-            <Match when={currentPath() === "/notifications"}>
-              <PersistentNotificationsRoute />
-            </Match>
-            <Match when={currentPath() === "/eye-rest"}>
-              <EyeRestRoute />
-            </Match>
-            <Match when={currentPath() === "/caps-lock-language-switch"}>
-              <CapsLockLanguageSwitchRoute />
-            </Match>
-            <Match when={currentPath() === "/current-language-indicator"}>
-              <CurrentLanguageIndicatorRoute />
-            </Match>
-            <Match when={currentPath() === "/settings"}>
-              <SettingsRoute />
-            </Match>
-          </Switch>
+          {props.children}
         </section>
       </main>
     </MainAppContext.Provider>
