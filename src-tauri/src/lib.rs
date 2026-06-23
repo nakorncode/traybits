@@ -20,9 +20,74 @@ struct NotificationSoundPreset {
 
 const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
     NotificationSoundPreset {
+        id: "aosp-acrux",
+        label: "AOSP Acrux",
+        file: "aosp-acrux.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-adara",
+        label: "AOSP Adara",
+        file: "aosp-adara.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-altair",
+        label: "AOSP Altair",
+        file: "aosp-altair.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-alya",
+        label: "AOSP Alya",
+        file: "aosp-alya.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-antares",
+        label: "AOSP Antares",
+        file: "aosp-antares.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-antimony",
+        label: "AOSP Antimony",
+        file: "aosp-antimony.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-arcturus",
+        label: "AOSP Arcturus",
+        file: "aosp-arcturus.wav",
+    },
+    NotificationSoundPreset {
         id: "aosp-argon",
         label: "AOSP Argon",
         file: "aosp-argon.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-ariel",
+        label: "AOSP Ariel",
+        file: "aosp-ariel.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-bellatrix",
+        label: "AOSP Bellatrix",
+        file: "aosp-bellatrix.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-beryllium",
+        label: "AOSP Beryllium",
+        file: "aosp-beryllium.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-betelgeuse",
+        label: "AOSP Betelgeuse",
+        file: "aosp-betelgeuse.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-capella",
+        label: "AOSP Capella",
+        file: "aosp-capella.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-carme",
+        label: "AOSP Carme",
+        file: "aosp-carme.wav",
     },
     NotificationSoundPreset {
         id: "aosp-ceres",
@@ -30,9 +95,39 @@ const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
         file: "aosp-ceres.wav",
     },
     NotificationSoundPreset {
+        id: "aosp-ceti-alpha",
+        label: "AOSP Ceti Alpha",
+        file: "aosp-ceti-alpha.wav",
+    },
+    NotificationSoundPreset {
         id: "aosp-cobalt",
         label: "AOSP Cobalt",
         file: "aosp-cobalt.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-deneb",
+        label: "AOSP Deneb",
+        file: "aosp-deneb.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-elara",
+        label: "AOSP Elara",
+        file: "aosp-elara.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-europa",
+        label: "AOSP Europa",
+        file: "aosp-europa.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-fluorine",
+        label: "AOSP Fluorine",
+        file: "aosp-fluorine.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-gallium",
+        label: "AOSP Gallium",
+        file: "aosp-gallium.wav",
     },
     NotificationSoundPreset {
         id: "aosp-helium",
@@ -40,9 +135,44 @@ const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
         file: "aosp-helium.wav",
     },
     NotificationSoundPreset {
+        id: "aosp-hojus",
+        label: "AOSP Hojus",
+        file: "aosp-hojus.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-iapetus",
+        label: "AOSP Iapetus",
+        file: "aosp-iapetus.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-io",
+        label: "AOSP Io",
+        file: "aosp-io.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-iridium",
+        label: "AOSP Iridium",
+        file: "aosp-iridium.wav",
+    },
+    NotificationSoundPreset {
         id: "aosp-krypton",
         label: "AOSP Krypton",
         file: "aosp-krypton.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-lalande",
+        label: "AOSP Lalande",
+        file: "aosp-lalande.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-mira",
+        label: "AOSP Mira",
+        file: "aosp-mira.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-palladium",
+        label: "AOSP Palladium",
+        file: "aosp-palladium.wav",
     },
     NotificationSoundPreset {
         id: "aosp-polaris",
@@ -50,9 +180,19 @@ const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
         file: "aosp-polaris.wav",
     },
     NotificationSoundPreset {
+        id: "aosp-pollux",
+        label: "AOSP Pollux",
+        file: "aosp-pollux.wav",
+    },
+    NotificationSoundPreset {
         id: "aosp-procyon",
         label: "AOSP Procyon",
         file: "aosp-procyon.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-proxima",
+        label: "AOSP Proxima",
+        file: "aosp-proxima.wav",
     },
     NotificationSoundPreset {
         id: "aosp-radon",
@@ -60,9 +200,69 @@ const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
         file: "aosp-radon.wav",
     },
     NotificationSoundPreset {
+        id: "aosp-rhea",
+        label: "AOSP Rhea",
+        file: "aosp-rhea.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-rubidium",
+        label: "AOSP Rubidium",
+        file: "aosp-rubidium.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-salacia",
+        label: "AOSP Salacia",
+        file: "aosp-salacia.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-selenium",
+        label: "AOSP Selenium",
+        file: "aosp-selenium.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-shaula",
+        label: "AOSP Shaula",
+        file: "aosp-shaula.wav",
+    },
+    NotificationSoundPreset {
         id: "aosp-spica",
         label: "AOSP Spica",
         file: "aosp-spica.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-strontium",
+        label: "AOSP Strontium",
+        file: "aosp-strontium.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-syrma",
+        label: "AOSP Syrma",
+        file: "aosp-syrma.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-talitha",
+        label: "AOSP Talitha",
+        file: "aosp-talitha.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-tejat",
+        label: "AOSP Tejat",
+        file: "aosp-tejat.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-tethys",
+        label: "AOSP Tethys",
+        file: "aosp-tethys.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-thallium",
+        label: "AOSP Thallium",
+        file: "aosp-thallium.wav",
+    },
+    NotificationSoundPreset {
+        id: "aosp-titan",
+        label: "AOSP Titan",
+        file: "aosp-titan.wav",
     },
     NotificationSoundPreset {
         id: "aosp-vega",
