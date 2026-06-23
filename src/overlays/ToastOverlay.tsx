@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "solid-sonner";
 import type { AppNotification, AppSettings } from "../types";
 
+const OVERLAY_SYNC_INTERVAL_MS = 250;
+
 export function ToastOverlay() {
   const [toasts, setToasts] = createSignal<AppNotification[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>();
@@ -16,7 +18,7 @@ export function ToastOverlay() {
 
   onMount(() => {
     void syncOverlayState();
-    const poll = window.setInterval(syncOverlayState, 750);
+    const poll = window.setInterval(syncOverlayState, OVERLAY_SYNC_INTERVAL_MS);
     let unlistenAdded: (() => void) | undefined;
     const resizeObserver = new ResizeObserver(() => requestOverlayResize());
     const mutationObserver = new MutationObserver(() => requestOverlayResize());

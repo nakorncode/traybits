@@ -1871,6 +1871,8 @@ mod notification_capture {
         KnownNotificationBindings, NotificationKinds, UserNotification,
     };
 
+    const NOTIFICATION_CAPTURE_POLL_MS: u64 = 250;
+
     pub fn start(app: AppHandle) {
         thread::spawn(move || run_capture_loop(app));
     }
@@ -1947,7 +1949,7 @@ mod notification_capture {
         loop {
             capture_current_notifications(&app, state.inner(), &listener, initial_sync);
             initial_sync = false;
-            thread::sleep(Duration::from_millis(750));
+            thread::sleep(Duration::from_millis(NOTIFICATION_CAPTURE_POLL_MS));
         }
     }
 
