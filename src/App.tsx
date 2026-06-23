@@ -14,6 +14,8 @@ import { A, Navigate, Route, Router, useLocation } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Toaster, toast } from "solid-sonner";
+import "solid-sonner/styles.css";
 import "./App.css";
 
 type ToolId = "persistent-notifications" | "eye-rest" | "caps-lock-language-switch" | "settings";
@@ -66,12 +68,19 @@ type NotificationCaptureStatus = {
   mode: string;
 };
 
+type OverlayMonitorOption = {
+  id: string;
+  label: string;
+  isPrimary: boolean;
+};
+
 type AppSettings = {
   runOnStartup: boolean;
   runHighPriority: boolean;
   closeBehavior: CloseBehavior;
   enableTrayIcon: boolean;
   notificationOverlayPlacement: OverlayPlacement;
+  notificationOverlayMonitor: string;
   capsLockLanguageSwitch: {
     enabled: boolean;
     preserveCapsLockWith: CapsLockFallbackHotkey;
@@ -83,12 +92,14 @@ type MainAppContextValue = {
   settings: Accessor<AppSettings | undefined>;
   settingsError: Accessor<string | undefined>;
   notificationError: Accessor<string | undefined>;
+  overlayMonitors: Accessor<OverlayMonitorOption[]>;
   notifications: Accessor<AppNotification[]>;
   captureStatus: Accessor<NotificationCaptureStatus | undefined>;
   pushToast: (tone: string) => Promise<void>;
   pushDemoNotification: () => Promise<void>;
   dismissNotification: (id: string) => Promise<void>;
   clearNotificationHistory: () => Promise<void>;
+  showMainSonnerToast: () => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
   updateCapsLockSettings: (patch: Partial<AppSettings["capsLockLanguageSwitch"]>) => void;
 };
@@ -195,20 +206,23 @@ function MainApp(props: ParentProps) {
   const [settings, setSettings] = createSignal<AppSettings>();
   const [settingsError, setSettingsError] = createSignal<string>();
   const [notificationError, setNotificationError] = createSignal<string>();
+  const [overlayMonitors, setOverlayMonitors] = createSignal<OverlayMonitorOption[]>([]);
   const [notifications, setNotifications] = createSignal<AppNotification[]>([]);
   const [captureStatus, setCaptureStatus] = createSignal<NotificationCaptureStatus>();
 
   onMount(async () => {
-    const [listener, appSettings, notificationItems, status] = await Promise.all([
+    const [listener, appSettings, notificationItems, status, monitors] = await Promise.all([
       invoke<NotificationListenerStatus>("notification_listener_status"),
       invoke<AppSettings>("get_app_settings"),
       invoke<AppNotification[]>("get_notifications"),
       invoke<NotificationCaptureStatus>("get_notification_capture_status"),
+      invoke<OverlayMonitorOption[]>("get_notification_overlay_monitors"),
     ]);
     setListenerStatus(listener);
     setSettings(appSettings);
     setNotifications(notificationItems);
     setCaptureStatus(status);
+    setOverlayMonitors(monitors);
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
       setNotifications((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)]);
@@ -257,6 +271,12 @@ function MainApp(props: ParentProps) {
     setNotifications([]);
   }
 
+  function showMainSonnerToast() {
+    toast.success("Solid Sonner rendered in the main window", {
+      description: "This proves browser-window toast rendering works separately from the transparent overlay.",
+    });
+  }
+
   async function refreshCaptureStatus() {
     setCaptureStatus(await invoke<NotificationCaptureStatus>("get_notification_capture_status"));
   }
@@ -294,12 +314,14 @@ function MainApp(props: ParentProps) {
     settings,
     settingsError,
     notificationError,
+    overlayMonitors,
     notifications,
     captureStatus,
     pushToast,
     pushDemoNotification,
     dismissNotification,
     clearNotificationHistory,
+    showMainSonnerToast,
     updateSettings,
     updateCapsLockSettings,
   };
@@ -343,6 +365,7 @@ function MainApp(props: ParentProps) {
           </header>
 
           {props.children}
+          <Toaster position="top-right" richColors closeButton expand visibleToasts={5} />
         </section>
       </main>
     </MainAppContext.Provider>
@@ -356,9 +379,11 @@ function PersistentNotificationsRoute() {
       captureStatus={app.captureStatus()}
       listenerStatus={app.listenerStatus()}
       notifications={app.notifications()}
+      overlayMonitors={app.overlayMonitors()}
       pushDemoNotification={app.pushDemoNotification}
       clearNotifications={app.clearNotificationHistory}
       dismissNotification={app.dismissNotification}
+      showMainSonnerToast={app.showMainSonnerToast}
       settings={app.settings()}
       updateSettings={app.updateSettings}
       settingsError={app.settingsError()}
@@ -399,9 +424,11 @@ function PersistentNotificationsPanel(props: {
   captureStatus?: NotificationCaptureStatus;
   listenerStatus?: NotificationListenerStatus;
   notifications: AppNotification[];
+  overlayMonitors: OverlayMonitorOption[];
   pushDemoNotification: () => Promise<void>;
   clearNotifications: () => Promise<void>;
   dismissNotification: (id: string) => Promise<void>;
+  showMainSonnerToast: () => void;
   settings?: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
   settingsError?: string;
@@ -440,6 +467,9 @@ function PersistentNotificationsPanel(props: {
           <button type="button" onClick={props.pushDemoNotification}>
             Run preview demo notification
           </button>
+          <button type="button" onClick={props.showMainSonnerToast}>
+            Run main-window sonner toast
+          </button>
           <button type="button" onClick={props.clearNotifications}>
             Clear history
           </button>
@@ -466,6 +496,25 @@ function PersistentNotificationsPanel(props: {
             )}
           </For>
         </div>
+        <label class="field-row overlay-monitor-field">
+          <span>Target screen</span>
+          <select
+            value={props.settings?.notificationOverlayMonitor ?? "primary"}
+            disabled={!props.settings || props.overlayMonitors.length === 0}
+            onChange={(event) =>
+              props.updateSettings({ notificationOverlayMonitor: event.currentTarget.value })
+            }
+          >
+            <For each={props.overlayMonitors}>
+              {(monitor) => (
+                <option value={monitor.id}>
+                  {monitor.label}
+                  {monitor.isPrimary && monitor.id !== "primary" ? " (primary)" : ""}
+                </option>
+              )}
+            </For>
+          </select>
+        </label>
         <Show when={props.settingsError}>
           <p class="error-text">{props.settingsError}</p>
         </Show>

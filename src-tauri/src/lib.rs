@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent,
+    AppHandle, Emitter, Manager, Monitor, PhysicalPosition, State, WindowEvent,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -62,6 +62,14 @@ struct NotificationCaptureStatus {
     mode: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayMonitorOption {
+    id: String,
+    label: String,
+    is_primary: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -71,6 +79,8 @@ struct AppSettings {
     enable_tray_icon: bool,
     #[serde(default = "default_notification_overlay_placement")]
     notification_overlay_placement: OverlayPlacement,
+    #[serde(default = "default_notification_overlay_monitor")]
+    notification_overlay_monitor: String,
     caps_lock_language_switch: CapsLockLanguageSwitchSettings,
 }
 
@@ -121,6 +131,10 @@ fn default_notification_overlay_placement() -> OverlayPlacement {
     OverlayPlacement::TopRight
 }
 
+fn default_notification_overlay_monitor() -> String {
+    "primary".into()
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -129,6 +143,7 @@ impl Default for AppSettings {
             close_behavior: CloseBehavior::MinimizeToTray,
             enable_tray_icon: true,
             notification_overlay_placement: default_notification_overlay_placement(),
+            notification_overlay_monitor: default_notification_overlay_monitor(),
             caps_lock_language_switch: CapsLockLanguageSwitchSettings {
                 enabled: false,
                 preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
@@ -201,6 +216,47 @@ fn get_notification_capture_status(
         .lock()
         .map(|status| status.clone())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_notification_overlay_monitors(app: AppHandle) -> Result<Vec<OverlayMonitorOption>, String> {
+    let monitors = app
+        .available_monitors()
+        .map_err(|error| error.to_string())?;
+    let primary_name = app
+        .primary_monitor()
+        .map_err(|error| error.to_string())?
+        .and_then(|monitor| monitor.name().cloned());
+
+    let mut options = vec![OverlayMonitorOption {
+        id: "primary".into(),
+        label: "Primary screen".into(),
+        is_primary: true,
+    }];
+
+    options.extend(monitors.iter().enumerate().map(|(index, monitor)| {
+        let size = monitor.size();
+        let name = monitor
+            .name()
+            .cloned()
+            .unwrap_or_else(|| format!("Screen {}", index + 1));
+        let is_primary = primary_name
+            .as_ref()
+            .is_some_and(|primary| monitor.name().is_some_and(|name| name == primary));
+        OverlayMonitorOption {
+            id: format!("monitor:{index}"),
+            label: format!(
+                "Screen {} - {} ({} x {})",
+                index + 1,
+                name,
+                size.width,
+                size.height
+            ),
+            is_primary,
+        }
+    }));
+
+    Ok(options)
 }
 
 #[tauri::command]
@@ -475,8 +531,8 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         return Err("toast window is not configured".into());
     };
 
-    if let Ok(Some(monitor)) = window.current_monitor() {
-        let size = monitor.size();
+    if let Some(monitor) = selected_overlay_monitor(app, &window) {
+        let work_area = monitor.work_area();
         let scale = monitor.scale_factor();
         let logical_width = 440.0 * scale;
         let logical_height = 520.0 * scale;
@@ -493,33 +549,77 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
             .unwrap_or(OverlayPlacement::TopRight);
         let (x, y) = overlay_position(
             placement,
-            size.width as f64,
-            size.height as f64,
+            work_area.position.x as f64,
+            work_area.position.y as f64,
+            work_area.size.width as f64,
+            work_area.size.height as f64,
             logical_width,
             logical_height,
             margin,
         );
-        let _ = window.set_position(PhysicalPosition::new(x.max(0.0) as i32, y.max(0.0) as i32));
+        let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
     }
 
     let _ = window.set_always_on_top(true);
     window.show().map_err(|error| error.to_string())
 }
 
+fn selected_overlay_monitor(app: &AppHandle, window: &tauri::WebviewWindow) -> Option<Monitor> {
+    let selected = app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .settings
+                .lock()
+                .ok()
+                .map(|settings| settings.notification_overlay_monitor.clone())
+        })
+        .unwrap_or_else(default_notification_overlay_monitor);
+
+    if selected == "primary" {
+        return app.primary_monitor().ok().flatten();
+    }
+
+    let index = selected
+        .strip_prefix("monitor:")
+        .and_then(|value| value.parse::<usize>().ok());
+
+    if let Some(index) = index {
+        if let Ok(monitors) = app.available_monitors() {
+            if let Some(monitor) = monitors.into_iter().nth(index) {
+                return Some(monitor);
+            }
+        }
+    }
+
+    window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .or_else(|| {
+            app.available_monitors()
+                .ok()
+                .and_then(|mut monitors| monitors.pop())
+        })
+}
+
 fn overlay_position(
     placement: OverlayPlacement,
+    screen_x: f64,
+    screen_y: f64,
     screen_width: f64,
     screen_height: f64,
     overlay_width: f64,
     overlay_height: f64,
     margin: f64,
 ) -> (f64, f64) {
-    let left = margin;
-    let center_x = (screen_width - overlay_width) / 2.0;
-    let right = screen_width - overlay_width - margin;
-    let top = margin;
-    let center_y = (screen_height - overlay_height) / 2.0;
-    let bottom = screen_height - overlay_height - margin;
+    let left = screen_x + margin;
+    let center_x = screen_x + (screen_width - overlay_width) / 2.0;
+    let right = screen_x + screen_width - overlay_width - margin;
+    let top = screen_y + margin;
+    let center_y = screen_y + (screen_height - overlay_height) / 2.0;
+    let bottom = screen_y + screen_height - overlay_height - margin;
 
     match placement {
         OverlayPlacement::TopLeft => (left, top),
@@ -1186,6 +1286,7 @@ pub fn run() {
             dismiss_notification,
             get_app_settings,
             get_notification_capture_status,
+            get_notification_overlay_monitors,
             get_notifications,
             hide_toast_overlay,
             notification_listener_status,

@@ -406,7 +406,15 @@ button {
 .notification-list {
   display: grid;
   gap: 10px;
+  max-height: clamp(220px, calc(100vh - 390px), 440px);
   margin-top: 18px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
+.overlay-monitor-field {
+  margin-top: 16px;
 }
 
 .notification-row {
