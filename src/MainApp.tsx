@@ -1,5 +1,5 @@
 import { type ParentProps, For, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { A, useLocation } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { tools } from "./constants";
@@ -13,6 +13,7 @@ import type { AppNotification, AppSettings, NotificationCaptureStatus, Notificat
 
 export function MainApp(props: ParentProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [listenerStatus, setListenerStatus] = createSignal<NotificationListenerStatus>();
   const [settings, setSettings] = createSignal<AppSettings>();
   const [settingsError, setSettingsError] = createSignal<string>();
@@ -155,13 +156,17 @@ export function MainApp(props: ParentProps) {
           <nav class="tool-nav" aria-label="Utilities">
             <For each={tools}>
               {(tool) => (
-                <A activeClass="selected" href={tool.path} end>
+                <button
+                  type="button"
+                  classList={{ selected: location.pathname === tool.path }}
+                  onClick={() => navigate(tool.path)}
+                >
                   <span class="nav-glyph">{tool.glyph}</span>
                   <span>
                     <strong>{tool.name}</strong>
                     <small>{tool.status}</small>
                   </span>
-                </A>
+                </button>
               )}
             </For>
           </nav>

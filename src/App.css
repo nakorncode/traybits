@@ -108,26 +108,27 @@ button {
   gap: 4px;
 }
 
-.tool-nav a {
+.tool-nav button {
   display: grid;
   grid-template-columns: 34px 1fr;
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-height: 48px;
   padding: 8px;
+  border: 0;
   border-radius: 6px;
   color: #272a33;
   background: transparent;
-  text-decoration: none;
   text-align: left;
   cursor: pointer;
 }
 
-.tool-nav a:hover {
+.tool-nav button:hover {
   background: #f1f2f6;
 }
 
-.tool-nav a.selected {
+.tool-nav button.selected {
   background: #e9f0ff;
   color: #1646a7;
 }
@@ -778,7 +779,7 @@ button {
   }
 
   .brand div:not(.brand-mark),
-  .tool-nav a span:not(.nav-glyph) {
+  .tool-nav button span:not(.nav-glyph) {
     display: none;
   }
 
@@ -786,7 +787,7 @@ button {
     align-items: center;
   }
 
-  .tool-nav a {
+  .tool-nav button {
     grid-template-columns: 34px;
   }
 
