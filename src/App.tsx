@@ -801,25 +801,19 @@ function ToastOverlay() {
   const [settings, setSettings] = createSignal<AppSettings>();
   const [lastPollAt, setLastPollAt] = createSignal<string>();
   const [lastPollError, setLastPollError] = createSignal<string>();
+  const [windowApiError, setWindowApiError] = createSignal<string>();
   const announcedIds = new Set<string>();
   let initialSyncDone = false;
 
   onMount(() => {
-    let poll: number | undefined;
-    let disposed = false;
-
-    void (async () => {
-      await getCurrentWindow().setAlwaysOnTop(true);
-      await syncOverlayState();
-      if (disposed) return;
-      poll = window.setInterval(syncOverlayState, 750);
-    })();
+    void syncOverlayState();
+    const poll = window.setInterval(syncOverlayState, 750);
+    void getCurrentWindow().setAlwaysOnTop(true).catch((error) => {
+      setWindowApiError(error instanceof Error ? error.message : String(error));
+    });
 
     onCleanup(() => {
-      disposed = true;
-      if (poll !== undefined) {
-        window.clearInterval(poll);
-      }
+      window.clearInterval(poll);
     });
   });
 
@@ -894,6 +888,9 @@ function ToastOverlay() {
           </Show>
           <Show when={lastPollError()}>
             {(error) => <span class="overlay-debug-error">Poll error: {error()}</span>}
+          </Show>
+          <Show when={windowApiError()}>
+            {(error) => <span class="overlay-debug-error">Window API error: {error()}</span>}
           </Show>
         </div>
       </Show>
