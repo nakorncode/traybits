@@ -1413,6 +1413,8 @@ fn resize_toast_overlay(app: &AppHandle, content_height: f64) -> Result<(), Stri
         logical_height,
         margin,
     );
+    let _ = window.set_ignore_cursor_events(false);
+    window.show().map_err(|error| error.to_string())?;
     refresh_overlay_topmost(&window)
 }
 
@@ -2438,7 +2440,7 @@ mod language_indicator {
             }
             (
                 Some(IndicatorPosition {
-                    x: first.x.round() as i32 + first.width.max(1.0).round() as i32 + 8,
+                    x: indicator_x_from_text_rect(first),
                     y: first.y.round() as i32 + first.height.max(1.0).round() as i32 + 8,
                     caret_available: true,
                     source: "UI Automation TextPattern2",
@@ -2505,7 +2507,7 @@ mod language_indicator {
         };
         (
             Some(IndicatorPosition {
-                x: first.x.round() as i32 + first.width.max(1.0).round() as i32 + 8,
+                x: indicator_x_from_text_rect(first),
                 y: first.y.round() as i32 + first.height.max(1.0).round() as i32 + 8,
                 caret_available: true,
                 source,
@@ -2523,6 +2525,11 @@ mod language_indicator {
         y: f64,
         width: f64,
         height: f64,
+    }
+
+    fn indicator_x_from_text_rect(rect: UiaTextRectangle) -> i32 {
+        let caret_like_width = rect.width.clamp(1.0, 18.0);
+        rect.x.round() as i32 + caret_like_width.round() as i32 + 8
     }
 
     fn first_uia_text_rectangle(

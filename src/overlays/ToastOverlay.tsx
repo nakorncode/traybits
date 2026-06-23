@@ -109,8 +109,9 @@ export function ToastOverlay() {
         `[data-sonner-toast][data-id="${CSS.escape(notification.id)}"]`,
       );
       if (!element) return;
-      element.dataset.traybitsClickable = notification.sourceAppUserModelId ? "true" : "false";
-      if (!notification.sourceAppUserModelId || element.dataset.traybitsOpenBound === "true") {
+      element.dataset.traybitsClickable = "true";
+      element.style.cursor = "pointer";
+      if (element.dataset.traybitsOpenBound === "true") {
         return;
       }
       element.dataset.traybitsOpenBound = "true";
@@ -119,6 +120,13 @@ export function ToastOverlay() {
         if (target?.closest("button")) return;
         void openNotificationSource(notification.id);
       });
+      element.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        void openNotificationSource(notification.id);
+      });
+      element.tabIndex = 0;
+      element.setAttribute("role", "button");
     });
   }
 
