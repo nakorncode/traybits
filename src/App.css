@@ -20,8 +20,15 @@
 :root[data-view="toast"],
 :root[data-view="toast"] body,
 :root[data-view="eye-rest"],
-:root[data-view="eye-rest"] body {
+:root[data-view="eye-rest"] body,
+:root[data-view="language-indicator"],
+:root[data-view="language-indicator"] body {
   background: transparent;
+}
+
+:root[data-view="language-indicator"] body {
+  min-width: 0;
+  min-height: 0;
 }
 
 * {
@@ -499,6 +506,57 @@ button {
   color: #667085;
 }
 
+.language-list {
+  display: grid;
+  gap: 10px;
+  max-height: 280px;
+  margin-top: 18px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.language-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e1e5ee;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.language-row > span {
+  display: grid;
+  width: 42px;
+  height: 32px;
+  place-items: center;
+  border-radius: 7px;
+  color: #174ea6;
+  background: #e8f1ff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.language-row div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.language-row strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.language-row small {
+  color: #667085;
+  font-size: 12px;
+}
+
 .toast-stage {
   display: flex;
   min-height: 100vh;
@@ -567,6 +625,61 @@ button {
 
 .toast-stage [data-sonner-toast][data-traybits-clickable="true"]:hover {
   border-color: #93c5fd;
+}
+
+.language-indicator-stage {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  place-items: center;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+}
+
+.language-indicator-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  max-width: 88px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 8px;
+  background: rgba(239, 246, 255, 0.96);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16);
+}
+
+.language-indicator-card.fallback {
+  border-color: rgba(15, 118, 110, 0.22);
+  background: rgba(240, 253, 250, 0.96);
+}
+
+.language-indicator-card strong {
+  display: grid;
+  min-width: 28px;
+  height: 22px;
+  place-items: center;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.language-indicator-card.fallback strong {
+  background: #0f766e;
+}
+
+.language-indicator-card span {
+  overflow: hidden;
+  color: #1e293b;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .eye-rest-stage {

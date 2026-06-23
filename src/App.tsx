@@ -18,7 +18,12 @@ import { Toaster, toast } from "solid-sonner";
 import "solid-sonner/styles.css";
 import "./App.css";
 
-type ToolId = "persistent-notifications" | "eye-rest" | "caps-lock-language-switch" | "settings";
+type ToolId =
+  | "persistent-notifications"
+  | "eye-rest"
+  | "caps-lock-language-switch"
+  | "current-language-indicator"
+  | "settings";
 
 type AppNotification = {
   id: string;
@@ -88,6 +93,32 @@ type EyeRestStatus = {
   now: number;
 };
 
+type InputLanguageInfo = {
+  id: string;
+  label: string;
+  languageCode: string;
+  displayCode: string;
+  localeName: string;
+};
+
+type CurrentLanguageIndicatorStatus = {
+  enabled: boolean;
+  current?: InputLanguageInfo;
+  installed: InputLanguageInfo[];
+  caretAvailable: boolean;
+  source: string;
+  message: string;
+};
+
+type LanguageIndicatorPayload = {
+  code: string;
+  label: string;
+  localeName: string;
+  x: number;
+  y: number;
+  caretAvailable: boolean;
+};
+
 type AppSettings = {
   runOnStartup: boolean;
   runHighPriority: boolean;
@@ -108,6 +139,9 @@ type AppSettings = {
   capsLockLanguageSwitch: {
     enabled: boolean;
     preserveCapsLockWith: CapsLockFallbackHotkey;
+  };
+  currentLanguageIndicator: {
+    enabled: boolean;
   };
 };
 
@@ -170,6 +204,14 @@ const tools: Array<{
     status: "Spike",
   },
   {
+    id: "current-language-indicator",
+    path: "/current-language-indicator",
+    name: "Current Language Indicator",
+    description: "Show the active input-language marker near the typing caret when the language changes.",
+    glyph: "IL",
+    status: "Spike",
+  },
+  {
     id: "settings",
     path: "/settings",
     name: "Settings",
@@ -223,6 +265,11 @@ function App() {
     return <EyeRestOverlay />;
   }
 
+  if (view === "language-indicator") {
+    document.documentElement.dataset.view = "language-indicator";
+    return <LanguageIndicatorOverlay />;
+  }
+
   delete document.documentElement.dataset.view;
   return (
     <Router root={MainApp}>
@@ -230,6 +277,7 @@ function App() {
       <Route path="/notifications" component={PersistentNotificationsRoute} />
       <Route path="/eye-rest" component={EyeRestRoute} />
       <Route path="/caps-lock-language-switch" component={CapsLockLanguageSwitchRoute} />
+      <Route path="/current-language-indicator" component={CurrentLanguageIndicatorRoute} />
       <Route path="/settings" component={SettingsRoute} />
     </Router>
   );
@@ -466,6 +514,24 @@ function CapsLockLanguageSwitchRoute() {
       pushToast={app.pushToast}
       settings={app.settings()?.capsLockLanguageSwitch}
       updateSettings={app.updateCapsLockSettings}
+      settingsError={app.settingsError()}
+    />
+  );
+}
+
+function CurrentLanguageIndicatorRoute() {
+  const app = useMainApp();
+  return (
+    <CurrentLanguageIndicatorPanel
+      settings={app.settings()?.currentLanguageIndicator}
+      updateSettings={(patch) =>
+        app.updateSettings({
+          currentLanguageIndicator: {
+            enabled: app.settings()?.currentLanguageIndicator.enabled ?? false,
+            ...patch,
+          },
+        })
+      }
       settingsError={app.settingsError()}
     />
   );
@@ -921,6 +987,118 @@ function CapsLockLanguageSwitchPanel(props: {
   );
 }
 
+function CurrentLanguageIndicatorPanel(props: {
+  settings?: AppSettings["currentLanguageIndicator"];
+  updateSettings: (patch: Partial<AppSettings["currentLanguageIndicator"]>) => void;
+  settingsError?: string;
+}) {
+  const [status, setStatus] = createSignal<CurrentLanguageIndicatorStatus>();
+  const [previewError, setPreviewError] = createSignal<string>();
+
+  onMount(() => {
+    void refreshStatus();
+    const timer = window.setInterval(refreshStatus, 1_000);
+    onCleanup(() => window.clearInterval(timer));
+  });
+
+  async function refreshStatus() {
+    setStatus(await invoke<CurrentLanguageIndicatorStatus>("current_language_indicator_status"));
+  }
+
+  async function previewIndicator() {
+    setPreviewError(undefined);
+    try {
+      await invoke("preview_current_language_indicator");
+      await refreshStatus();
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  return (
+    <div class="content-grid">
+      <section class="panel primary-panel">
+        <div class="section-title">
+          <span>Typing marker</span>
+          <strong>Current input language near the caret</strong>
+        </div>
+        <p>
+          Shows a compact language marker such as TH, EN, or JA when Windows reports that the
+          foreground input language changed. Caret placement uses Win32 caret data when available.
+        </p>
+        <div class="settings-list">
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={props.settings?.enabled ?? false}
+              disabled={!props.settings}
+              onChange={(event) => props.updateSettings({ enabled: event.currentTarget.checked })}
+            />
+            Enable Current Language Indicator
+          </label>
+          <button class="quiet-button" type="button" onClick={previewIndicator}>
+            Preview indicator
+          </button>
+        </div>
+        <Show when={props.settingsError}>
+          <p class="error-text">{props.settingsError}</p>
+        </Show>
+        <Show when={previewError()}>
+          <p class="error-text">{previewError()}</p>
+        </Show>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <span>Runtime status</span>
+          <strong>{status()?.enabled ? "Enabled" : "Disabled"}</strong>
+        </div>
+        <dl class="fact-list compact-facts">
+          <div>
+            <dt>Current language</dt>
+            <dd>
+              {status()?.current
+                ? `${status()?.current?.displayCode} - ${status()?.current?.label}`
+                : "Not detected"}
+            </dd>
+          </div>
+          <div>
+            <dt>Caret position</dt>
+            <dd>{status()?.caretAvailable ? "Available" : "Fallback to focused window"}</dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd>{status()?.source ?? "Loading"}</dd>
+          </div>
+        </dl>
+        <p class="hint-text">{status()?.message ?? "Loading indicator status..."}</p>
+      </section>
+
+      <section class="panel wide-panel">
+        <div class="section-title">
+          <span>Installed input languages</span>
+          <strong>Windows layouts on this machine</strong>
+        </div>
+        <div class="language-list">
+          <For each={status()?.installed ?? []} fallback={<p class="empty-text">No layouts detected yet.</p>}>
+            {(language) => (
+              <div class="language-row">
+                <span>{language.displayCode}</span>
+                <div>
+                  <strong>{language.label}</strong>
+                  <small>
+                    {language.localeName} / ISO {language.languageCode}
+                  </small>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SettingsPanel(props: {
   settings?: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
@@ -1198,6 +1376,52 @@ function ToastOverlay() {
         }}
       />
     </div>
+  );
+}
+
+function LanguageIndicatorOverlay() {
+  const [payload, setPayload] = createSignal<LanguageIndicatorPayload>();
+  let hideTimer: number | undefined;
+
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<LanguageIndicatorPayload>("traybits://language-indicator", (event) => {
+      setPayload(event.payload);
+      if (hideTimer) {
+        window.clearTimeout(hideTimer);
+      }
+      hideTimer = window.setTimeout(() => {
+        setPayload(undefined);
+        invoke("hide_language_indicator_overlay").catch(() => undefined);
+      }, 1_100);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    onCleanup(() => {
+      unlisten?.();
+      if (hideTimer) {
+        window.clearTimeout(hideTimer);
+      }
+    });
+  });
+
+  return (
+    <main class="language-indicator-stage">
+      <Show when={payload()}>
+        {(item) => (
+          <section
+            classList={{
+              "language-indicator-card": true,
+              fallback: !item().caretAvailable,
+            }}
+          >
+            <strong>{item().code}</strong>
+            <span>{item().label}</span>
+          </section>
+        )}
+      </Show>
+    </main>
   );
 }
 

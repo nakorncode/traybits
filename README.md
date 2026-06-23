@@ -23,6 +23,8 @@ It includes:
 - Persisted settings for startup, process priority, close behavior, and tray
   icon visibility.
 - A Windows Caps Lock hook that can switch to the next installed input language.
+- An experimental current-language indicator that can show the active input
+  language near the Windows caret when layout detection is available.
 - A Windows notification listener status panel that documents the native spike
   needed for real notification capture.
 
@@ -39,6 +41,7 @@ TrayBits starts as an umbrella for these existing or planned modules:
 | Persistent Notifications | Keep Windows notifications visible as desktop cards until dismissed or handled. | `G:\NakornCode\git\toastdeck` |
 | Eye Rest Reminder | Show periodic 20-20-20 reminders for long desktop sessions. | Planned / to be located |
 | Caps Lock Language Switch | Use Caps Lock as a quick input-language switch while preserving clear lock behavior. | `G:\Freespace\capslang-windows` |
+| Current Language Indicator | Show the active input-language marker near the typing caret after language changes. | New TrayBits module |
 
 The first goal is not to merge code blindly. TrayBits should prove the Tauri
 shape first, then decide case by case whether each tool should be ported,

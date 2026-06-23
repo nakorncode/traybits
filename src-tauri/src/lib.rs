@@ -345,6 +345,38 @@ struct OverlayMonitorOption {
     is_primary: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InputLanguageInfo {
+    id: String,
+    label: String,
+    language_code: String,
+    display_code: String,
+    locale_name: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentLanguageIndicatorStatus {
+    enabled: bool,
+    current: Option<InputLanguageInfo>,
+    installed: Vec<InputLanguageInfo>,
+    caret_available: bool,
+    source: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanguageIndicatorPayload {
+    code: String,
+    label: String,
+    locale_name: String,
+    x: i32,
+    y: i32,
+    caret_available: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -371,6 +403,8 @@ struct AppSettings {
     #[serde(default)]
     eye_rest_reminder: EyeRestReminderSettings,
     caps_lock_language_switch: CapsLockLanguageSwitchSettings,
+    #[serde(default)]
+    current_language_indicator: CurrentLanguageIndicatorSettings,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -399,6 +433,12 @@ enum OverlayPlacement {
 struct CapsLockLanguageSwitchSettings {
     enabled: bool,
     preserve_caps_lock_with: CapsLockFallbackHotkey,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct CurrentLanguageIndicatorSettings {
+    enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -502,6 +542,12 @@ impl Default for EyeRestReminderSettings {
     }
 }
 
+impl Default for CurrentLanguageIndicatorSettings {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -523,6 +569,7 @@ impl Default for AppSettings {
                 enabled: false,
                 preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
             },
+            current_language_indicator: CurrentLanguageIndicatorSettings::default(),
         }
     }
 }
@@ -567,6 +614,7 @@ fn update_app_settings(
     apply_runtime_settings(&app, &settings)?;
     save_settings(&app, &settings)?;
     keyboard::apply_settings(&settings.caps_lock_language_switch);
+    language_indicator::apply_settings(&app, &settings.current_language_indicator);
 
     let previous_eye_rest_settings = {
         let mut current_settings = state.settings.lock().map_err(|error| error.to_string())?;
@@ -618,6 +666,29 @@ fn get_notification_capture_status(
 #[tauri::command]
 fn get_eye_rest_status(state: State<'_, AppState>) -> Result<EyeRestStatus, String> {
     eye_rest_status(state.inner())
+}
+
+#[tauri::command]
+fn current_language_indicator_status(
+    state: State<'_, AppState>,
+) -> Result<CurrentLanguageIndicatorStatus, String> {
+    let enabled = state
+        .settings
+        .lock()
+        .map(|settings| settings.current_language_indicator.enabled)
+        .map_err(|error| error.to_string())?;
+    Ok(language_indicator::status(enabled))
+}
+
+#[tauri::command]
+fn preview_current_language_indicator(app: AppHandle) -> Result<(), String> {
+    language_indicator::preview(&app)
+}
+
+#[tauri::command]
+fn hide_language_indicator_overlay(app: AppHandle) -> Result<(), String> {
+    language_indicator::hide(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -2061,6 +2132,318 @@ mod notification_capture {
 }
 
 #[cfg(target_os = "windows")]
+mod language_indicator {
+    use super::{
+        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
+        LanguageIndicatorPayload,
+    };
+    use std::{
+        sync::{Mutex, OnceLock},
+        thread,
+        time::Duration,
+    };
+    use tauri::{AppHandle, Emitter, Manager};
+    use windows::{
+        core::PCWSTR,
+        Win32::{
+            Foundation::{POINT, RECT},
+            Globalization::{
+                GetLocaleInfoEx, LCIDToLocaleName, LOCALE_ALLOW_NEUTRAL_NAMES,
+                LOCALE_SISO639LANGNAME2, LOCALE_SLOCALIZEDDISPLAYNAME,
+            },
+            Graphics::Gdi::ClientToScreen,
+            UI::{
+                Input::KeyboardAndMouse::{GetKeyboardLayout, GetKeyboardLayoutList, HKL},
+                WindowsAndMessaging::{
+                    GetForegroundWindow, GetGUIThreadInfo, GetWindowRect, GetWindowThreadProcessId,
+                    GUITHREADINFO, GUI_CARETBLINKING,
+                },
+            },
+        },
+    };
+
+    #[derive(Clone, Copy, Default)]
+    struct IndicatorSettings {
+        enabled: bool,
+    }
+
+    #[derive(Clone)]
+    struct IndicatorSnapshot {
+        language: InputLanguageInfo,
+        x: i32,
+        y: i32,
+        caret_available: bool,
+        signature: String,
+    }
+
+    static SETTINGS: OnceLock<Mutex<IndicatorSettings>> = OnceLock::new();
+    static MONITOR_STARTED: OnceLock<()> = OnceLock::new();
+
+    pub fn apply_settings(app: &AppHandle, settings: &CurrentLanguageIndicatorSettings) {
+        let _ = SETTINGS.set(Mutex::new(IndicatorSettings::default()));
+        if let Some(lock) = SETTINGS.get() {
+            if let Ok(mut current) = lock.lock() {
+                current.enabled = settings.enabled;
+            }
+        }
+
+        start(app.clone());
+
+        if settings.enabled {
+            let _ = preview(app);
+        } else {
+            hide(app);
+        }
+    }
+
+    pub fn status(enabled: bool) -> CurrentLanguageIndicatorStatus {
+        let current = active_language_snapshot().map(|snapshot| snapshot.language);
+        let caret_available = caret_position()
+            .map(|position| position.caret_available)
+            .unwrap_or(false);
+        CurrentLanguageIndicatorStatus {
+            enabled,
+            current,
+            installed: installed_languages(),
+            caret_available,
+            source: "GetKeyboardLayout + GetGUIThreadInfo".into(),
+            message: if enabled {
+                "The monitor is enabled. It shows the marker when the foreground input language changes.".into()
+            } else {
+                "The monitor is disabled. Enable it to test the caret language marker.".into()
+            },
+        }
+    }
+
+    pub fn preview(app: &AppHandle) -> Result<(), String> {
+        let snapshot = active_language_snapshot()
+            .ok_or_else(|| "Could not read the active input language.".to_string())?;
+        show(app, &snapshot)
+    }
+
+    fn start(app: AppHandle) {
+        let _ = MONITOR_STARTED.get_or_init(|| {
+            thread::spawn(move || {
+                let mut last_signature = String::new();
+                loop {
+                    if current_settings().enabled {
+                        if let Some(snapshot) = active_language_snapshot() {
+                            if snapshot.signature != last_signature {
+                                last_signature = snapshot.signature.clone();
+                                let _ = show(&app, &snapshot);
+                            }
+                        }
+                    }
+                    thread::sleep(Duration::from_millis(250));
+                }
+            });
+        });
+    }
+
+    fn current_settings() -> IndicatorSettings {
+        SETTINGS
+            .get()
+            .and_then(|lock| lock.lock().ok().map(|settings| *settings))
+            .unwrap_or_default()
+    }
+
+    fn show(app: &AppHandle, snapshot: &IndicatorSnapshot) -> Result<(), String> {
+        let Some(window) = app.get_webview_window("language-indicator") else {
+            return Err("language-indicator window is not configured".into());
+        };
+        let payload = LanguageIndicatorPayload {
+            code: snapshot.language.display_code.clone(),
+            label: snapshot.language.label.clone(),
+            locale_name: snapshot.language.locale_name.clone(),
+            x: snapshot.x,
+            y: snapshot.y,
+            caret_available: snapshot.caret_available,
+        };
+
+        let width = 92;
+        let height = 44;
+        window
+            .set_size(tauri::PhysicalSize::new(width, height))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_position(tauri::PhysicalPosition::new(snapshot.x, snapshot.y))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())?;
+        let _ = window.set_ignore_cursor_events(true);
+        window.show().map_err(|error| error.to_string())?;
+        app.emit_to(
+            "language-indicator",
+            "traybits://language-indicator",
+            payload,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn hide(app: &AppHandle) {
+        if let Some(window) = app.get_webview_window("language-indicator") {
+            let _ = window.hide();
+        }
+    }
+
+    fn active_language_snapshot() -> Option<IndicatorSnapshot> {
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if foreground_window.is_invalid() {
+            return None;
+        }
+
+        let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+        let layout = unsafe { GetKeyboardLayout(thread_id) };
+        let language = language_from_layout(layout)?;
+        let position = caret_position().or_else(foreground_fallback_position)?;
+        Some(IndicatorSnapshot {
+            signature: language.id.clone(),
+            language,
+            x: position.x,
+            y: position.y,
+            caret_available: position.caret_available,
+        })
+    }
+
+    #[derive(Clone, Copy)]
+    struct IndicatorPosition {
+        x: i32,
+        y: i32,
+        caret_available: bool,
+    }
+
+    fn caret_position() -> Option<IndicatorPosition> {
+        let mut info = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        unsafe { GetGUIThreadInfo(0, &mut info).ok()? };
+        if info.hwndCaret.is_invalid() || (info.flags & GUI_CARETBLINKING).0 == 0 {
+            return None;
+        }
+
+        let mut point = POINT {
+            x: info.rcCaret.right + 8,
+            y: info.rcCaret.bottom + 8,
+        };
+        if !unsafe { ClientToScreen(info.hwndCaret, &mut point) }.as_bool() {
+            return None;
+        }
+
+        Some(IndicatorPosition {
+            x: point.x,
+            y: point.y,
+            caret_available: true,
+        })
+    }
+
+    fn foreground_fallback_position() -> Option<IndicatorPosition> {
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if foreground_window.is_invalid() {
+            return None;
+        }
+        let mut rect = RECT::default();
+        unsafe { GetWindowRect(foreground_window, &mut rect).ok()? };
+        Some(IndicatorPosition {
+            x: rect.left + 24,
+            y: rect.top + 72,
+            caret_available: false,
+        })
+    }
+
+    fn installed_languages() -> Vec<InputLanguageInfo> {
+        let count = unsafe { GetKeyboardLayoutList(None) };
+        if count <= 0 {
+            return Vec::new();
+        }
+        let mut layouts = vec![HKL::default(); count as usize];
+        let loaded = unsafe { GetKeyboardLayoutList(Some(&mut layouts)) };
+        layouts
+            .into_iter()
+            .take(loaded.max(0) as usize)
+            .filter_map(language_from_layout)
+            .fold(Vec::<InputLanguageInfo>::new(), |mut acc, language| {
+                if !acc.iter().any(|item| item.id == language.id) {
+                    acc.push(language);
+                }
+                acc
+            })
+    }
+
+    fn language_from_layout(layout: HKL) -> Option<InputLanguageInfo> {
+        let lang_id = (layout.0 as u32 & 0xffff) as u32;
+        let locale_name =
+            locale_name_from_lang_id(lang_id).unwrap_or_else(|| format!("{lang_id:04x}"));
+        let iso_code = locale_string(locale_name.as_str(), LOCALE_SISO639LANGNAME2)
+            .or_else(|| locale_name.split('-').next().map(|value| value.to_string()))
+            .unwrap_or_else(|| "und".into());
+        let display_code = iso_code.to_uppercase();
+        let label = locale_string(locale_name.as_str(), LOCALE_SLOCALIZEDDISPLAYNAME)
+            .unwrap_or_else(|| locale_name.clone());
+        Some(InputLanguageInfo {
+            id: format!("{:x}", layout.0 as usize),
+            label,
+            language_code: iso_code,
+            display_code,
+            locale_name,
+        })
+    }
+
+    fn locale_name_from_lang_id(lang_id: u32) -> Option<String> {
+        let mut buffer = [0u16; 85];
+        let length =
+            unsafe { LCIDToLocaleName(lang_id, Some(&mut buffer), LOCALE_ALLOW_NEUTRAL_NAMES) };
+        if length <= 1 {
+            return None;
+        }
+        Some(String::from_utf16_lossy(&buffer[..length as usize - 1]))
+    }
+
+    fn locale_string(locale_name: &str, locale_type: u32) -> Option<String> {
+        let locale_wide: Vec<u16> = locale_name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut buffer = [0u16; 128];
+        let length = unsafe {
+            GetLocaleInfoEx(PCWSTR(locale_wide.as_ptr()), locale_type, Some(&mut buffer))
+        };
+        if length <= 1 {
+            return None;
+        }
+        Some(String::from_utf16_lossy(&buffer[..length as usize - 1]))
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+mod language_indicator {
+    use super::{
+        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
+    };
+    use tauri::AppHandle;
+
+    pub fn apply_settings(_app: &AppHandle, _settings: &CurrentLanguageIndicatorSettings) {}
+
+    pub fn status(enabled: bool) -> CurrentLanguageIndicatorStatus {
+        CurrentLanguageIndicatorStatus {
+            enabled,
+            current: None,
+            installed: Vec::<InputLanguageInfo>::new(),
+            caret_available: false,
+            source: "unsupported".into(),
+            message: "Current Language Indicator is only implemented on Windows.".into(),
+        }
+    }
+
+    pub fn preview(_app: &AppHandle) -> Result<(), String> {
+        Err("Current Language Indicator is only implemented on Windows.".into())
+    }
+
+    pub fn hide(_app: &AppHandle) {}
+}
+
+#[cfg(target_os = "windows")]
 mod keyboard {
     use super::{CapsLockFallbackHotkey, CapsLockLanguageSwitchSettings};
     use std::{
@@ -2284,6 +2667,7 @@ pub fn run() {
             });
             apply_runtime_settings(app.handle(), &settings)?;
             keyboard::apply_settings(&settings.caps_lock_language_switch);
+            language_indicator::apply_settings(app.handle(), &settings.current_language_indicator);
             let state = app.state::<AppState>();
             sync_eye_rest_settings(state.inner(), &settings.eye_rest_reminder);
             sync_overlay_debug_visibility(app.handle(), &settings);
@@ -2295,6 +2679,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             clear_notifications,
             complete_eye_rest,
+            current_language_indicator_status,
             dismiss_notification,
             get_app_settings,
             get_eye_rest_status,
@@ -2302,9 +2687,11 @@ pub fn run() {
             get_notification_overlay_monitors,
             get_notification_sound_presets,
             get_notifications,
+            hide_language_indicator_overlay,
             hide_toast_overlay,
             notification_listener_status,
             open_notification_source,
+            preview_current_language_indicator,
             preview_notification_sound,
             push_demo_notification,
             push_demo_toast,

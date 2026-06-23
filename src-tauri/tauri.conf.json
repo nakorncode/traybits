@@ -46,6 +46,20 @@
         "skipTaskbar": true,
         "visible": false,
         "shadow": false
+      },
+      {
+        "label": "language-indicator",
+        "title": "TrayBits Language Indicator",
+        "url": "index.html?view=language-indicator",
+        "width": 92,
+        "height": 44,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": false
       }
     ],
     "security": {

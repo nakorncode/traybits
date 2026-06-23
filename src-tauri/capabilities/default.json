@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for TrayBits windows",
-  "windows": ["main", "toast", "eye-rest"],
+  "windows": ["main", "toast", "eye-rest", "language-indicator"],
   "permissions": [
     "core:default",
     "core:window:allow-set-always-on-top",
