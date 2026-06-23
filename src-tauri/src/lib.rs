@@ -8,8 +8,73 @@ use tauri::{
 
 const TRAY_ID: &str = "main";
 const SETTINGS_FILE: &str = "settings.json";
-const NOTIFICATION_SOUND_FILE: &str = "traybits-notification.wav";
-const NOTIFICATION_SOUND_ASSET_PATH: &str = "assets/sounds/traybits-notification.wav";
+const DEFAULT_NOTIFICATION_SOUND_PRESET: &str = "soft-ping";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NotificationSoundPreset {
+    id: &'static str,
+    label: &'static str,
+    file: &'static str,
+}
+
+const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
+    NotificationSoundPreset {
+        id: "soft-ping",
+        label: "Soft Ping",
+        file: "soft-ping.wav",
+    },
+    NotificationSoundPreset {
+        id: "glass-tap",
+        label: "Glass Tap",
+        file: "glass-tap.wav",
+    },
+    NotificationSoundPreset {
+        id: "bright-chime",
+        label: "Bright Chime",
+        file: "bright-chime.wav",
+    },
+    NotificationSoundPreset {
+        id: "warm-pop",
+        label: "Warm Pop",
+        file: "warm-pop.wav",
+    },
+    NotificationSoundPreset {
+        id: "digital-blip",
+        label: "Digital Blip",
+        file: "digital-blip.wav",
+    },
+    NotificationSoundPreset {
+        id: "clean-bell",
+        label: "Clean Bell",
+        file: "clean-bell.wav",
+    },
+    NotificationSoundPreset {
+        id: "muted-tick",
+        label: "Muted Tick",
+        file: "muted-tick.wav",
+    },
+    NotificationSoundPreset {
+        id: "double-ping",
+        label: "Double Ping",
+        file: "double-ping.wav",
+    },
+    NotificationSoundPreset {
+        id: "calm-notify",
+        label: "Calm Notify",
+        file: "calm-notify.wav",
+    },
+    NotificationSoundPreset {
+        id: "sharp-alert",
+        label: "Sharp Alert",
+        file: "sharp-alert.wav",
+    },
+    NotificationSoundPreset {
+        id: "classic-interface",
+        label: "Classic Interface",
+        file: "traybits-notification.wav",
+    },
+];
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +158,8 @@ struct AppSettings {
     enable_tray_icon: bool,
     #[serde(default = "default_notification_sound_enabled")]
     notification_sound_enabled: bool,
+    #[serde(default = "default_notification_sound_preset")]
+    notification_sound_preset: String,
     #[serde(default = "default_notification_overlay_placement")]
     notification_overlay_placement: OverlayPlacement,
     #[serde(default = "default_notification_overlay_monitor")]
@@ -157,6 +224,10 @@ fn default_notification_sound_enabled() -> bool {
     true
 }
 
+fn default_notification_sound_preset() -> String {
+    DEFAULT_NOTIFICATION_SOUND_PRESET.into()
+}
+
 fn default_notification_overlay_debug_visible() -> bool {
     false
 }
@@ -169,6 +240,7 @@ impl Default for AppSettings {
             close_behavior: CloseBehavior::MinimizeToTray,
             enable_tray_icon: true,
             notification_sound_enabled: default_notification_sound_enabled(),
+            notification_sound_preset: default_notification_sound_preset(),
             notification_overlay_placement: default_notification_overlay_placement(),
             notification_overlay_monitor: default_notification_overlay_monitor(),
             notification_overlay_debug_visible: default_notification_overlay_debug_visible(),
@@ -198,6 +270,16 @@ fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
         .lock()
         .map(|settings| settings.clone())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_notification_sound_presets() -> Vec<NotificationSoundPreset> {
+    NOTIFICATION_SOUND_PRESETS.to_vec()
+}
+
+#[tauri::command]
+fn preview_notification_sound(app: AppHandle, preset_id: String) -> Result<(), String> {
+    notification_sound::play(&app, preset_id.as_str())
 }
 
 #[tauri::command]
@@ -447,7 +529,13 @@ fn add_notification(
         }
     };
     if play_sound {
-        notification_sound::play(app);
+        let preset_id = state
+            .settings
+            .lock()
+            .ok()
+            .map(|settings| settings.notification_sound_preset.clone())
+            .unwrap_or_else(default_notification_sound_preset);
+        let _ = notification_sound::play(app, preset_id.as_str());
     }
     app.emit("traybits://notification-added", notification.clone())
         .map_err(|error| error.to_string())?;
@@ -512,6 +600,9 @@ fn hide_toast_overlay(app: AppHandle) -> Result<(), String> {
 fn normalize_settings(mut settings: AppSettings) -> AppSettings {
     if !settings.enable_tray_icon && settings.close_behavior == CloseBehavior::MinimizeToTray {
         settings.close_behavior = CloseBehavior::Exit;
+    }
+    if notification_sound_preset(settings.notification_sound_preset.as_str()).is_none() {
+        settings.notification_sound_preset = default_notification_sound_preset();
     }
     settings
 }
@@ -637,6 +728,18 @@ fn open_source_app(app_user_model_id: &str) -> bool {
         .arg(format!("shell:AppsFolder\\{app_user_model_id}"))
         .spawn()
         .is_ok()
+}
+
+fn notification_sound_preset(id: &str) -> Option<&'static NotificationSoundPreset> {
+    NOTIFICATION_SOUND_PRESETS
+        .iter()
+        .find(|preset| preset.id == id)
+}
+
+fn default_notification_sound_file() -> &'static str {
+    notification_sound_preset(DEFAULT_NOTIFICATION_SOUND_PRESET)
+        .map(|preset| preset.file)
+        .unwrap_or("soft-ping.wav")
 }
 
 fn show_toast_window(app: &AppHandle) -> Result<(), String> {
@@ -847,15 +950,18 @@ mod priority {
 
 #[cfg(target_os = "windows")]
 mod notification_sound {
-    use super::{AppHandle, NOTIFICATION_SOUND_ASSET_PATH, NOTIFICATION_SOUND_FILE};
+    use super::{default_notification_sound_file, notification_sound_preset, AppHandle};
     use std::{os::windows::ffi::OsStrExt, path::PathBuf};
     use tauri::Manager;
     use windows::core::PCWSTR;
     use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_NODEFAULT};
 
-    pub fn play(app: &AppHandle) {
-        let Some(path) = sound_path(app) else {
-            return;
+    pub fn play(app: &AppHandle, preset_id: &str) -> Result<(), String> {
+        let file = notification_sound_preset(preset_id)
+            .map(|preset| preset.file)
+            .unwrap_or_else(default_notification_sound_file);
+        let Some(path) = sound_path(app, file) else {
+            return Err(format!("Notification sound file was not found: {file}"));
         };
         let mut wide: Vec<u16> = path
             .as_os_str()
@@ -870,19 +976,26 @@ mod notification_sound {
                 SND_FILENAME | SND_ASYNC | SND_NODEFAULT,
             );
         }
+        Ok(())
     }
 
-    fn sound_path(app: &AppHandle) -> Option<PathBuf> {
+    fn sound_path(app: &AppHandle, file: &str) -> Option<PathBuf> {
         let mut candidates = Vec::new();
 
         if let Ok(resource_dir) = app.path().resource_dir() {
-            candidates.push(resource_dir.join(NOTIFICATION_SOUND_FILE));
-            candidates.push(resource_dir.join(NOTIFICATION_SOUND_ASSET_PATH));
+            candidates.push(resource_dir.join(file));
+            candidates.push(resource_dir.join("assets").join("sounds").join(file));
         }
 
         if let Ok(current_dir) = std::env::current_dir() {
-            candidates.push(current_dir.join(NOTIFICATION_SOUND_ASSET_PATH));
-            candidates.push(current_dir.join("..").join(NOTIFICATION_SOUND_ASSET_PATH));
+            candidates.push(current_dir.join("assets").join("sounds").join(file));
+            candidates.push(
+                current_dir
+                    .join("..")
+                    .join("assets")
+                    .join("sounds")
+                    .join(file),
+            );
         }
 
         candidates.into_iter().find(|path| path.is_file())
@@ -893,7 +1006,9 @@ mod notification_sound {
 mod notification_sound {
     use super::AppHandle;
 
-    pub fn play(_app: &AppHandle) {}
+    pub fn play(_app: &AppHandle, _preset_id: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1475,10 +1590,12 @@ pub fn run() {
             get_app_settings,
             get_notification_capture_status,
             get_notification_overlay_monitors,
+            get_notification_sound_presets,
             get_notifications,
             hide_toast_overlay,
             notification_listener_status,
             open_notification_source,
+            preview_notification_sound,
             push_demo_notification,
             push_demo_toast,
             update_app_settings

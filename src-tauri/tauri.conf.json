@@ -42,6 +42,16 @@
     "active": true,
     "targets": "all",
     "resources": [
+      "../assets/sounds/soft-ping.wav",
+      "../assets/sounds/glass-tap.wav",
+      "../assets/sounds/bright-chime.wav",
+      "../assets/sounds/warm-pop.wav",
+      "../assets/sounds/digital-blip.wav",
+      "../assets/sounds/clean-bell.wav",
+      "../assets/sounds/muted-tick.wav",
+      "../assets/sounds/double-ping.wav",
+      "../assets/sounds/calm-notify.wav",
+      "../assets/sounds/sharp-alert.wav",
       "../assets/sounds/traybits-notification.wav"
     ],
     "icon": [

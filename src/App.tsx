@@ -82,6 +82,7 @@ type AppSettings = {
   closeBehavior: CloseBehavior;
   enableTrayIcon: boolean;
   notificationSoundEnabled: boolean;
+  notificationSoundPreset: string;
   notificationOverlayPlacement: OverlayPlacement;
   notificationOverlayMonitor: string;
   notificationOverlayDebugVisible: boolean;
@@ -97,6 +98,7 @@ type MainAppContextValue = {
   settingsError: Accessor<string | undefined>;
   notificationError: Accessor<string | undefined>;
   notificationStatus: Accessor<string | undefined>;
+  notificationSoundPresets: Accessor<NotificationSoundPreset[]>;
   overlayMonitors: Accessor<OverlayMonitorOption[]>;
   notifications: Accessor<AppNotification[]>;
   captureStatus: Accessor<NotificationCaptureStatus | undefined>;
@@ -106,6 +108,12 @@ type MainAppContextValue = {
   clearNotificationHistory: () => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => void;
   updateCapsLockSettings: (patch: Partial<AppSettings["capsLockLanguageSwitch"]>) => void;
+};
+
+type NotificationSoundPreset = {
+  id: string;
+  label: string;
+  file: string;
 };
 
 const MainAppContext = createContext<MainAppContextValue>();
@@ -211,23 +219,26 @@ function MainApp(props: ParentProps) {
   const [settingsError, setSettingsError] = createSignal<string>();
   const [notificationError, setNotificationError] = createSignal<string>();
   const [notificationStatus, setNotificationStatus] = createSignal<string>();
+  const [notificationSoundPresets, setNotificationSoundPresets] = createSignal<NotificationSoundPreset[]>([]);
   const [overlayMonitors, setOverlayMonitors] = createSignal<OverlayMonitorOption[]>([]);
   const [notifications, setNotifications] = createSignal<AppNotification[]>([]);
   const [captureStatus, setCaptureStatus] = createSignal<NotificationCaptureStatus>();
 
   onMount(async () => {
-    const [listener, appSettings, notificationItems, status, monitors] = await Promise.all([
+    const [listener, appSettings, notificationItems, status, monitors, soundPresets] = await Promise.all([
       invoke<NotificationListenerStatus>("notification_listener_status"),
       invoke<AppSettings>("get_app_settings"),
       invoke<AppNotification[]>("get_notifications"),
       invoke<NotificationCaptureStatus>("get_notification_capture_status"),
       invoke<OverlayMonitorOption[]>("get_notification_overlay_monitors"),
+      invoke<NotificationSoundPreset[]>("get_notification_sound_presets"),
     ]);
     setListenerStatus(listener);
     setSettings(appSettings);
     setNotifications(notificationItems);
     setCaptureStatus(status);
     setOverlayMonitors(monitors);
+    setNotificationSoundPresets(soundPresets);
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
       setNotifications((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)]);
@@ -320,6 +331,7 @@ function MainApp(props: ParentProps) {
     settingsError,
     notificationError,
     notificationStatus,
+    notificationSoundPresets,
     overlayMonitors,
     notifications,
     captureStatus,
@@ -383,6 +395,7 @@ function PersistentNotificationsRoute() {
       captureStatus={app.captureStatus()}
       listenerStatus={app.listenerStatus()}
       notifications={app.notifications()}
+      notificationSoundPresets={app.notificationSoundPresets()}
       overlayMonitors={app.overlayMonitors()}
       pushDemoNotification={app.pushDemoNotification}
       clearNotifications={app.clearNotificationHistory}
@@ -428,6 +441,7 @@ function PersistentNotificationsPanel(props: {
   captureStatus?: NotificationCaptureStatus;
   listenerStatus?: NotificationListenerStatus;
   notifications: AppNotification[];
+  notificationSoundPresets: NotificationSoundPreset[];
   overlayMonitors: OverlayMonitorOption[];
   pushDemoNotification: () => Promise<void>;
   clearNotifications: () => Promise<void>;
@@ -526,6 +540,22 @@ function PersistentNotificationsPanel(props: {
             }
           />
           Enable notification sound
+        </label>
+        <label class="field-row overlay-monitor-field">
+          <span>Notification sound</span>
+          <select
+            value={props.settings?.notificationSoundPreset ?? "soft-ping"}
+            disabled={!props.settings || props.notificationSoundPresets.length === 0}
+            onChange={(event) => {
+              const presetId = event.currentTarget.value;
+              props.updateSettings({ notificationSoundPreset: presetId });
+              void invoke("preview_notification_sound", { presetId }).catch(() => undefined);
+            }}
+          >
+            <For each={props.notificationSoundPresets}>
+              {(preset) => <option value={preset.id}>{preset.label}</option>}
+            </For>
+          </select>
         </label>
         <label class="toggle-row">
           <input
