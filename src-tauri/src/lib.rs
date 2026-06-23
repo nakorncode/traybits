@@ -339,6 +339,27 @@ fn push_demo_notification(
 }
 
 #[tauri::command]
+fn push_overlay_debug_notification(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<AppNotification, String> {
+    let notification = AppNotification {
+        id: format!("overlay-debug-{}", monotonic_millis()),
+        title: "Overlay-window sonner test".into(),
+        body: "This notification was written into Rust state so the overlay window can pull it without Tauri event delivery.".into(),
+        source: "TrayBits Overlay".into(),
+        source_app_user_model_id: None,
+        origin: NotificationOrigin::Demo,
+        created_at: now_timestamp(),
+        tone: "windows".into(),
+        silent: false,
+    };
+
+    add_notification(&app, state.inner(), notification.clone(), true, false)?;
+    Ok(notification)
+}
+
+#[tauri::command]
 fn dismiss_notification(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1440,6 +1461,7 @@ pub fn run() {
             hide_toast_overlay,
             notification_listener_status,
             push_demo_notification,
+            push_overlay_debug_notification,
             push_demo_toast,
             update_app_settings
         ])

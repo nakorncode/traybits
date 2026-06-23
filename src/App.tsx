@@ -13,21 +13,12 @@ import {
 import { A, Navigate, Route, Router, useLocation } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toaster, toast } from "solid-sonner";
 import "solid-sonner/styles.css";
 import "./App.css";
 
 type ToolId = "persistent-notifications" | "eye-rest" | "caps-lock-language-switch" | "settings";
-
-type ToastPayload = {
-  id: number;
-  source: string;
-  title: string;
-  body: string;
-  tone: string;
-};
 
 type AppNotification = {
   id: string;
@@ -112,6 +103,7 @@ type MainAppContextValue = {
   captureStatus: Accessor<NotificationCaptureStatus | undefined>;
   pushToast: (tone: string) => Promise<void>;
   pushDemoNotification: () => Promise<void>;
+  pushOverlaySonnerToast: () => Promise<void>;
   dismissNotification: (id: string) => Promise<void>;
   clearNotificationHistory: () => Promise<void>;
   showMainSonnerToast: () => void;
@@ -293,6 +285,24 @@ function MainApp(props: ParentProps) {
     }
   }
 
+  async function pushOverlaySonnerToast() {
+    setNotificationError(undefined);
+    setNotificationStatus(undefined);
+    try {
+      const notification = await invoke<AppNotification>("push_overlay_debug_notification");
+      setNotifications((items) => [
+        notification,
+        ...items.filter((item) => item.id !== notification.id),
+      ]);
+      setNotificationStatus("Overlay debug notification was added to the shared store.");
+      toast.success("Overlay store-poll test queued", {
+        description: "The overlay window should pull this notification from Rust state.",
+      });
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async function dismissNotification(id: string) {
     await invoke("dismiss_notification", { id });
     setNotifications((items) => items.filter((item) => item.id !== id));
@@ -352,6 +362,7 @@ function MainApp(props: ParentProps) {
     captureStatus,
     pushToast,
     pushDemoNotification,
+    pushOverlaySonnerToast,
     dismissNotification,
     clearNotificationHistory,
     showMainSonnerToast,
@@ -414,6 +425,7 @@ function PersistentNotificationsRoute() {
       notifications={app.notifications()}
       overlayMonitors={app.overlayMonitors()}
       pushDemoNotification={app.pushDemoNotification}
+      pushOverlaySonnerToast={app.pushOverlaySonnerToast}
       clearNotifications={app.clearNotificationHistory}
       dismissNotification={app.dismissNotification}
       showMainSonnerToast={app.showMainSonnerToast}
@@ -460,6 +472,7 @@ function PersistentNotificationsPanel(props: {
   notifications: AppNotification[];
   overlayMonitors: OverlayMonitorOption[];
   pushDemoNotification: () => Promise<void>;
+  pushOverlaySonnerToast: () => Promise<void>;
   clearNotifications: () => Promise<void>;
   dismissNotification: (id: string) => Promise<void>;
   showMainSonnerToast: () => void;
@@ -504,6 +517,9 @@ function PersistentNotificationsPanel(props: {
           </button>
           <button type="button" onClick={props.showMainSonnerToast}>
             Run main-window sonner toast
+          </button>
+          <button type="button" onClick={props.pushOverlaySonnerToast}>
+            Run overlay-window sonner toast
           </button>
           <button type="button" onClick={props.clearNotifications}>
             Clear history
@@ -786,91 +802,57 @@ function SettingsPanel(props: {
 function ToastOverlay() {
   const [toasts, setToasts] = createSignal<AppNotification[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>();
+  const [lastPollAt, setLastPollAt] = createSignal<string>();
   const announcedIds = new Set<string>();
+  let initialSyncDone = false;
 
-  onMount(async () => {
-    await getCurrentWindow().setAlwaysOnTop(true);
-    const webview = getCurrentWebviewWindow();
+  onMount(() => {
+    let poll: number | undefined;
+    let disposed = false;
 
-    const [existing, appSettings] = await Promise.all([
-      invoke<AppNotification[]>("get_notifications"),
-      invoke<AppSettings>("get_app_settings"),
-    ]);
-    setSettings(appSettings);
-    setToasts(existing.filter((notification) => !notification.silent).slice(0, 4));
-
-    const unlistenAdded = await webview.listen<AppNotification>("traybits://notification-added", (event) => {
-      addOverlayNotification(event.payload);
-    });
-    const unlistenGlobalAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
-      addOverlayNotification(event.payload);
-    });
-    const unlistenDismissed = await webview.listen<string>("traybits://notification-dismissed", (event) => {
-      setToasts((items) => items.filter((toast) => toast.id !== event.payload));
-      hideWhenEmpty();
-    });
-    const unlistenCleared = await webview.listen("traybits://notifications-cleared", () => {
-      setToasts([]);
-      hideWhenEmpty();
-    });
-    const unlistenSettings = await webview.listen<AppSettings>("traybits://settings-updated", (event) => {
-      setSettings(event.payload);
-    });
-    const unlistenGlobalSettings = await listen<AppSettings>("traybits://settings-updated", (event) => {
-      setSettings(event.payload);
-    });
-    const unlistenLegacy = await webview.listen<ToastPayload>("traybits://toast", (event) => {
-      const payload = event.payload;
-      const notification: AppNotification = {
-        id: `legacy-${payload.id}`,
-        title: payload.title,
-        body: payload.body,
-        source: payload.source,
-        origin: "demo",
-        createdAt: String(Date.now()),
-        tone: payload.tone,
-      };
-      addOverlayNotification(notification);
-    });
-    const poll = window.setInterval(syncOverlayNotifications, 1500);
+    void (async () => {
+      await getCurrentWindow().setAlwaysOnTop(true);
+      await syncOverlayState();
+      if (disposed) return;
+      poll = window.setInterval(syncOverlayState, 750);
+    })();
 
     onCleanup(() => {
-      unlistenAdded();
-      unlistenGlobalAdded();
-      unlistenDismissed();
-      unlistenCleared();
-      unlistenSettings();
-      unlistenGlobalSettings();
-      unlistenLegacy();
-      window.clearInterval(poll);
+      disposed = true;
+      if (poll !== undefined) {
+        window.clearInterval(poll);
+      }
     });
   });
 
-  async function syncOverlayNotifications() {
+  async function syncOverlayState() {
     try {
-      const latest = await invoke<AppNotification[]>("get_notifications");
+      const [latest, appSettings] = await Promise.all([
+        invoke<AppNotification[]>("get_notifications"),
+        invoke<AppSettings>("get_app_settings"),
+      ]);
       const visible = latest.filter((notification) => !notification.silent).slice(0, 4);
-      setToasts((current) => {
-        const known = new Set(current.map((notification) => notification.id));
-        for (const notification of visible) {
-          if (!known.has(notification.id)) {
-            showOverlaySonner(notification);
-          }
-        }
-        return visible;
-      });
-    } catch {
-      // Polling is only a fallback for missed events.
-    }
-  }
+      setSettings(appSettings);
+      setLastPollAt(new Date().toLocaleTimeString());
 
-  function addOverlayNotification(notification: AppNotification) {
-    if (notification.silent) return;
-    setToasts((items) => [
-      notification,
-      ...items.filter((item) => item.id !== notification.id),
-    ].slice(0, 4));
-    showOverlaySonner(notification);
+      if (!initialSyncDone) {
+        for (const notification of visible) {
+          announcedIds.add(notification.id);
+        }
+        initialSyncDone = true;
+      } else {
+        for (const notification of visible) {
+          showOverlaySonner(notification);
+        }
+      }
+
+      setToasts(visible);
+      if (visible.length === 0) {
+        hideWhenEmpty();
+      }
+    } catch {
+      // The overlay is diagnostic UI; keep the last rendered state if a poll fails.
+    }
   }
 
   function showOverlaySonner(notification: AppNotification) {
@@ -906,6 +888,7 @@ function ToastOverlay() {
         <div class="overlay-debug-card">
           <strong>TrayBits overlay debug</strong>
           <span>Transparent overlay window is visible.</span>
+          <span>Store polling is active{lastPollAt() ? `, last checked ${lastPollAt()}` : ""}.</span>
         </div>
       </Show>
       <Toaster
