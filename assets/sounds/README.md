@@ -1,29 +1,47 @@
 # Sound Assets
 
-TrayBits notification sounds are short generated WAV tones stored in this
-folder and bundled with the app.
+TrayBits bundles short notification sounds from multiple free/open sources so
+the presets have distinct tone, texture, and authorship.
 
-## Generated presets
+## OpenCode Notifier presets
 
-These files were generated locally for TrayBits and can be used, modified, and
-redistributed with this project:
+Source: `@mohak34/opencode-notifier` version `0.2.8`
 
-- `soft-ping.wav`
-- `glass-tap.wav`
-- `bright-chime.wav`
-- `warm-pop.wav`
-- `digital-blip.wav`
-- `clean-bell.wav`
-- `muted-tick.wav`
-- `double-ping.wav`
-- `calm-notify.wav`
-- `sharp-alert.wav`
+- Repository: https://github.com/mohak34/opencode-notifier
+- Package: https://www.npmjs.com/package/@mohak34/opencode-notifier
+- License: MIT
 
-## Classic preset
+Bundled files:
 
-`traybits-notification.wav` is bundled as the `Classic Interface` preset.
+- `opencode-complete.wav`
+- `opencode-permission.wav`
+- `opencode-question.wav`
+- `opencode-error.wav`
+- `opencode-subagent-complete.wav`
 
-- Source: Mixkit, `Software interface start`
+## Kenney Interface Sounds presets
+
+Source: Kenney Interface Sounds
+
+- Official page: https://kenney.nl/assets/interface-sounds
+- Retrieval mirror used for selected WAV files: https://github.com/Calinou/kenney-ui-audio
+- License: Creative Commons CC0
+
+Bundled files:
+
+- `kenney-switch-2.wav`
+- `kenney-switch-20.wav`
+- `kenney-click-3.wav`
+- `kenney-rollover-4.wav`
+
+## Mixkit Classic Interface preset
+
+Source: Mixkit, `Software interface start`
+
 - Source page: https://mixkit.co/free-sound-effects/notification/
 - License: Mixkit Sound Effects Free License
 - License page: https://mixkit.co/license/
+
+Bundled file:
+
+- `traybits-notification.wav`

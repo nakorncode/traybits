@@ -544,7 +544,7 @@ function PersistentNotificationsPanel(props: {
         <label class="field-row overlay-monitor-field">
           <span>Notification sound</span>
           <select
-            value={props.settings?.notificationSoundPreset ?? "soft-ping"}
+            value={props.settings?.notificationSoundPreset ?? "opencode-complete"}
             disabled={!props.settings || props.notificationSoundPresets.length === 0}
             onChange={(event) => {
               const presetId = event.currentTarget.value;

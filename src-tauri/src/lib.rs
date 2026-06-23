@@ -8,7 +8,7 @@ use tauri::{
 
 const TRAY_ID: &str = "main";
 const SETTINGS_FILE: &str = "settings.json";
-const DEFAULT_NOTIFICATION_SOUND_PRESET: &str = "soft-ping";
+const DEFAULT_NOTIFICATION_SOUND_PRESET: &str = "opencode-complete";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,58 +20,53 @@ struct NotificationSoundPreset {
 
 const NOTIFICATION_SOUND_PRESETS: &[NotificationSoundPreset] = &[
     NotificationSoundPreset {
-        id: "soft-ping",
-        label: "Soft Ping",
-        file: "soft-ping.wav",
+        id: "opencode-complete",
+        label: "OpenCode Complete",
+        file: "opencode-complete.wav",
     },
     NotificationSoundPreset {
-        id: "glass-tap",
-        label: "Glass Tap",
-        file: "glass-tap.wav",
+        id: "opencode-permission",
+        label: "OpenCode Permission",
+        file: "opencode-permission.wav",
     },
     NotificationSoundPreset {
-        id: "bright-chime",
-        label: "Bright Chime",
-        file: "bright-chime.wav",
+        id: "opencode-question",
+        label: "OpenCode Question",
+        file: "opencode-question.wav",
     },
     NotificationSoundPreset {
-        id: "warm-pop",
-        label: "Warm Pop",
-        file: "warm-pop.wav",
+        id: "opencode-error",
+        label: "OpenCode Error",
+        file: "opencode-error.wav",
     },
     NotificationSoundPreset {
-        id: "digital-blip",
-        label: "Digital Blip",
-        file: "digital-blip.wav",
+        id: "opencode-subagent-complete",
+        label: "OpenCode Subagent",
+        file: "opencode-subagent-complete.wav",
     },
     NotificationSoundPreset {
-        id: "clean-bell",
-        label: "Clean Bell",
-        file: "clean-bell.wav",
+        id: "kenney-switch-soft",
+        label: "Kenney Soft Switch",
+        file: "kenney-switch-2.wav",
     },
     NotificationSoundPreset {
-        id: "muted-tick",
-        label: "Muted Tick",
-        file: "muted-tick.wav",
+        id: "kenney-switch-bright",
+        label: "Kenney Bright Switch",
+        file: "kenney-switch-20.wav",
     },
     NotificationSoundPreset {
-        id: "double-ping",
-        label: "Double Ping",
-        file: "double-ping.wav",
+        id: "kenney-click",
+        label: "Kenney Click",
+        file: "kenney-click-3.wav",
     },
     NotificationSoundPreset {
-        id: "calm-notify",
-        label: "Calm Notify",
-        file: "calm-notify.wav",
+        id: "kenney-rollover",
+        label: "Kenney Rollover",
+        file: "kenney-rollover-4.wav",
     },
     NotificationSoundPreset {
-        id: "sharp-alert",
-        label: "Sharp Alert",
-        file: "sharp-alert.wav",
-    },
-    NotificationSoundPreset {
-        id: "classic-interface",
-        label: "Classic Interface",
+        id: "mixkit-classic-interface",
+        label: "Mixkit Classic Interface",
         file: "traybits-notification.wav",
     },
 ];
@@ -739,7 +734,7 @@ fn notification_sound_preset(id: &str) -> Option<&'static NotificationSoundPrese
 fn default_notification_sound_file() -> &'static str {
     notification_sound_preset(DEFAULT_NOTIFICATION_SOUND_PRESET)
         .map(|preset| preset.file)
-        .unwrap_or("soft-ping.wav")
+        .unwrap_or("opencode-complete.wav")
 }
 
 fn show_toast_window(app: &AppHandle) -> Result<(), String> {
