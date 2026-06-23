@@ -90,8 +90,10 @@ type AppSettings = {
   runHighPriority: boolean;
   closeBehavior: CloseBehavior;
   enableTrayIcon: boolean;
+  notificationSoundEnabled: boolean;
   notificationOverlayPlacement: OverlayPlacement;
   notificationOverlayMonitor: string;
+  notificationOverlayDebugVisible: boolean;
   capsLockLanguageSwitch: {
     enabled: boolean;
     preserveCapsLockWith: CapsLockFallbackHotkey;
@@ -239,6 +241,11 @@ function MainApp(props: ParentProps) {
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
       setNotifications((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)]);
+      if (!event.payload.silent && event.payload.origin === "windows") {
+        toast.info(event.payload.title, {
+          description: `${event.payload.source}: ${event.payload.body}`,
+        });
+      }
       void refreshCaptureStatus();
     });
     const unlistenDismissed = await listen<string>("traybits://notification-dismissed", (event) => {
@@ -542,6 +549,28 @@ function PersistentNotificationsPanel(props: {
             </For>
           </select>
         </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.notificationSoundEnabled ?? true}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ notificationSoundEnabled: event.currentTarget.checked })
+            }
+          />
+          Enable notification sound
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.notificationOverlayDebugVisible ?? true}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ notificationOverlayDebugVisible: event.currentTarget.checked })
+            }
+          />
+          Show overlay debug background
+        </label>
         <Show when={props.settingsError}>
           <p class="error-text">{props.settingsError}</p>
         </Show>
@@ -755,11 +784,16 @@ function SettingsPanel(props: {
 
 function ToastOverlay() {
   const [toasts, setToasts] = createSignal<AppNotification[]>([]);
+  const [settings, setSettings] = createSignal<AppSettings>();
 
   onMount(async () => {
     await getCurrentWindow().setAlwaysOnTop(true);
 
-    const existing = await invoke<AppNotification[]>("get_notifications");
+    const [existing, appSettings] = await Promise.all([
+      invoke<AppNotification[]>("get_notifications"),
+      invoke<AppSettings>("get_app_settings"),
+    ]);
+    setSettings(appSettings);
     setToasts(existing.filter((notification) => !notification.silent).slice(0, 4));
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
@@ -773,6 +807,9 @@ function ToastOverlay() {
     const unlistenCleared = await listen("traybits://notifications-cleared", () => {
       setToasts([]);
       hideWhenEmpty();
+    });
+    const unlistenSettings = await listen<AppSettings>("traybits://settings-updated", (event) => {
+      setSettings(event.payload);
     });
     const unlistenLegacy = await listen<ToastPayload>("traybits://toast", (event) => {
       const payload = event.payload;
@@ -792,6 +829,7 @@ function ToastOverlay() {
       unlistenAdded();
       unlistenDismissed();
       unlistenCleared();
+      unlistenSettings();
       unlistenLegacy();
     });
   });
@@ -804,14 +842,23 @@ function ToastOverlay() {
 
   function hideWhenEmpty() {
     window.setTimeout(() => {
-      if (toasts().length === 0) {
+      if (toasts().length === 0 && !settings()?.notificationOverlayDebugVisible) {
         invoke("hide_toast_overlay").catch(() => undefined);
       }
     }, 180);
   }
 
   return (
-    <div class="toast-stage">
+    <div
+      class="toast-stage"
+      classList={{ "debug-overlay": (settings()?.notificationOverlayDebugVisible ?? true) && toasts().length === 0 }}
+    >
+      <Show when={(settings()?.notificationOverlayDebugVisible ?? true) && toasts().length === 0}>
+        <div class="overlay-debug-card">
+          <strong>TrayBits overlay debug</strong>
+          <span>Transparent overlay window is visible.</span>
+        </div>
+      </Show>
       <For each={toasts()}>
         {(toast) => (
           <article class={`toast-card tone-${toast.tone}`}>

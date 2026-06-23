@@ -490,6 +490,34 @@ button {
   pointer-events: none;
 }
 
+.toast-stage.debug-overlay {
+  justify-content: center;
+  border: 2px solid #2563eb;
+  background: #ffffff;
+  pointer-events: auto;
+}
+
+.overlay-debug-card {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  color: #111827;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.overlay-debug-card strong,
+.overlay-debug-card span {
+  display: block;
+}
+
+.overlay-debug-card span {
+  color: #4b5563;
+  font-size: 13px;
+}
+
 .toast-card {
   display: grid;
   grid-template-columns: 42px 1fr 28px;

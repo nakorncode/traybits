@@ -91,10 +91,14 @@ struct AppSettings {
     run_high_priority: bool,
     close_behavior: CloseBehavior,
     enable_tray_icon: bool,
+    #[serde(default = "default_notification_sound_enabled")]
+    notification_sound_enabled: bool,
     #[serde(default = "default_notification_overlay_placement")]
     notification_overlay_placement: OverlayPlacement,
     #[serde(default = "default_notification_overlay_monitor")]
     notification_overlay_monitor: String,
+    #[serde(default = "default_notification_overlay_debug_visible")]
+    notification_overlay_debug_visible: bool,
     caps_lock_language_switch: CapsLockLanguageSwitchSettings,
 }
 
@@ -149,6 +153,14 @@ fn default_notification_overlay_monitor() -> String {
     "primary".into()
 }
 
+fn default_notification_sound_enabled() -> bool {
+    true
+}
+
+fn default_notification_overlay_debug_visible() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -156,8 +168,10 @@ impl Default for AppSettings {
             run_high_priority: false,
             close_behavior: CloseBehavior::MinimizeToTray,
             enable_tray_icon: true,
+            notification_sound_enabled: default_notification_sound_enabled(),
             notification_overlay_placement: default_notification_overlay_placement(),
             notification_overlay_monitor: default_notification_overlay_monitor(),
+            notification_overlay_debug_visible: default_notification_overlay_debug_visible(),
             caps_lock_language_switch: CapsLockLanguageSwitchSettings {
                 enabled: false,
                 preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
@@ -198,6 +212,9 @@ fn update_app_settings(
     keyboard::apply_settings(&settings.caps_lock_language_switch);
 
     *state.settings.lock().map_err(|error| error.to_string())? = settings.clone();
+    app.emit("traybits://settings-updated", settings.clone())
+        .map_err(|error| error.to_string())?;
+    sync_overlay_debug_visibility(&app, &settings);
     Ok(settings)
 }
 
@@ -278,6 +295,11 @@ fn push_demo_notification(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<PreviewNotificationResult, String> {
+    let settings = state
+        .settings
+        .lock()
+        .map(|settings| settings.clone())
+        .map_err(|error| error.to_string())?;
     let notification = AppNotification {
         id: format!("demo-{}", monotonic_millis()),
         title: "Demo notification".into(),
@@ -290,18 +312,25 @@ fn push_demo_notification(
         silent: false,
     };
 
-    let native_notification = match show_native_notification(&app, &notification) {
-        Ok(()) => NotificationDeliveryStatus {
-            ok: true,
-            message: "Native Windows notification sent through WinRT.".into(),
-        },
-        Err(error) => NotificationDeliveryStatus {
-            ok: false,
-            message: error,
-        },
-    };
+    let native_notification =
+        match show_native_notification(&app, &notification, settings.notification_sound_enabled) {
+            Ok(()) => NotificationDeliveryStatus {
+                ok: true,
+                message: "Native Windows notification sent through WinRT.".into(),
+            },
+            Err(error) => NotificationDeliveryStatus {
+                ok: false,
+                message: error,
+            },
+        };
     mark_notification_seen(state.inner(), &notification);
-    let overlay = add_notification(&app, state.inner(), notification.clone(), true, true)?;
+    let overlay = add_notification(
+        &app,
+        state.inner(),
+        notification.clone(),
+        true,
+        settings.notification_sound_enabled,
+    )?;
     Ok(PreviewNotificationResult {
         notification,
         native_notification,
@@ -405,8 +434,12 @@ fn add_notification(
     Ok(overlay)
 }
 
-fn show_native_notification(app: &AppHandle, notification: &AppNotification) -> Result<(), String> {
-    native_windows_notification::show(app, notification)
+fn show_native_notification(
+    app: &AppHandle,
+    notification: &AppNotification,
+    sound_enabled: bool,
+) -> Result<(), String> {
+    native_windows_notification::show(app, notification, sound_enabled)
 }
 
 fn mark_notification_seen(state: &AppState, notification: &AppNotification) {
@@ -494,6 +527,20 @@ fn apply_runtime_settings(app: &AppHandle, settings: &AppSettings) -> Result<(),
     priority::set_high_priority(settings.run_high_priority)?;
     sync_tray_icon(app, settings.enable_tray_icon)?;
     Ok(())
+}
+
+fn sync_overlay_debug_visibility(app: &AppHandle, settings: &AppSettings) {
+    if settings.notification_overlay_debug_visible {
+        let _ = show_toast_window(app);
+    } else if app
+        .state::<AppState>()
+        .notifications
+        .lock()
+        .map(|notifications| notifications.is_empty())
+        .unwrap_or(false)
+    {
+        let _ = hide_toast_overlay(app.clone());
+    }
 }
 
 fn sync_tray_icon(app: &AppHandle, enabled: bool) -> Result<(), String> {
@@ -822,14 +869,24 @@ mod native_windows_notification {
     use tauri_winrt_notification::{Duration, Toast};
     use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
-    pub fn show(app: &AppHandle, notification: &AppNotification) -> Result<(), String> {
+    pub fn show(
+        app: &AppHandle,
+        notification: &AppNotification,
+        sound_enabled: bool,
+    ) -> Result<(), String> {
         let app_id = app.config().identifier.clone();
         register_app_user_model_id(&app_id)?;
 
-        Toast::new(&app_id)
+        let mut toast = Toast::new(&app_id)
             .title(&notification.title)
             .text1(&notification.body)
-            .duration(Duration::Short)
+            .duration(Duration::Short);
+
+        if !sound_enabled {
+            toast = toast.sound(None);
+        }
+
+        toast
             .show()
             .map_err(|error| format!("Could not send WinRT notification: {error}"))
     }
@@ -858,7 +915,11 @@ mod native_windows_notification {
 mod native_windows_notification {
     use super::{AppHandle, AppNotification};
 
-    pub fn show(_app: &AppHandle, _notification: &AppNotification) -> Result<(), String> {
+    pub fn show(
+        _app: &AppHandle,
+        _notification: &AppNotification,
+        _sound_enabled: bool,
+    ) -> Result<(), String> {
         Err("Native Windows notifications are only available on Windows.".into())
     }
 }
@@ -1027,7 +1088,18 @@ mod notification_capture {
                 continue;
             }
 
-            let _ = add_notification(app, state, app_notification, !initial_sync, !initial_sync);
+            let sound_enabled = state
+                .settings
+                .lock()
+                .map(|settings| settings.notification_sound_enabled)
+                .unwrap_or(true);
+            let _ = add_notification(
+                app,
+                state,
+                app_notification,
+                !initial_sync,
+                !initial_sync && sound_enabled,
+            );
         }
     }
 
@@ -1359,6 +1431,7 @@ pub fn run() {
             });
             apply_runtime_settings(app.handle(), &settings)?;
             keyboard::apply_settings(&settings.caps_lock_language_switch);
+            sync_overlay_debug_visibility(app.handle(), &settings);
             notification_capture::start(app.handle().clone());
             Ok(())
         })
