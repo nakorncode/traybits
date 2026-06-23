@@ -1116,17 +1116,31 @@ function ToastOverlay() {
 
   function requestOverlayResize() {
     window.requestAnimationFrame(() => {
-      window.setTimeout(measureAndResizeOverlay, 80);
+      measureAndResizeOverlay();
+      window.setTimeout(measureAndResizeOverlay, 120);
+      window.setTimeout(measureAndResizeOverlay, 320);
     });
   }
 
   function measureAndResizeOverlay() {
     if (!stageRef) return;
-    const contentBottom = Array.from(stageRef.children).reduce((bottom, child) => {
-      const element = child as HTMLElement;
-      return Math.max(bottom, element.offsetTop + element.scrollHeight);
-    }, 0);
-    const contentHeight = Math.ceil(contentBottom + 18);
+    const measuredElements = [
+      ...Array.from(stageRef.querySelectorAll<HTMLElement>("[data-sonner-toast]")),
+      ...Array.from(stageRef.querySelectorAll<HTMLElement>(".overlay-debug-card")),
+    ];
+    if (measuredElements.length === 0) return;
+
+    const stageTop = stageRef.getBoundingClientRect().top;
+    const bounds = measuredElements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        bottom: rect.bottom - stageTop,
+        top: rect.top - stageTop,
+      };
+    });
+    const contentTop = Math.min(...bounds.map((rect) => rect.top));
+    const contentBottom = Math.max(...bounds.map((rect) => rect.bottom));
+    const contentHeight = Math.ceil(contentBottom - contentTop + 36);
     if (!Number.isFinite(contentHeight) || contentHeight <= 0) return;
     if (Math.abs(contentHeight - lastMeasuredOverlayHeight) < 8) return;
     lastMeasuredOverlayHeight = contentHeight;
