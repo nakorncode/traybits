@@ -13,7 +13,6 @@ import {
 import { A, Navigate, Route, Router, useLocation } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toaster, toast } from "solid-sonner";
 import "solid-sonner/styles.css";
 import "./App.css";
@@ -755,7 +754,6 @@ function ToastOverlay() {
   const [settings, setSettings] = createSignal<AppSettings>();
   const [lastPollAt, setLastPollAt] = createSignal<string>();
   const [lastPollError, setLastPollError] = createSignal<string>();
-  const [windowApiError, setWindowApiError] = createSignal<string>();
   const announcedIds = new Set<string>();
   const activeSonnerIds = new Set<string>();
   let initialSyncDone = false;
@@ -763,9 +761,6 @@ function ToastOverlay() {
   onMount(() => {
     void syncOverlayState();
     const poll = window.setInterval(syncOverlayState, 750);
-    void getCurrentWindow().setAlwaysOnTop(true).catch((error) => {
-      setWindowApiError(error instanceof Error ? error.message : String(error));
-    });
 
     onCleanup(() => {
       window.clearInterval(poll);
@@ -869,9 +864,6 @@ function ToastOverlay() {
           <Show when={lastPollError()}>
             {(error) => <span class="overlay-debug-error">Poll error: {error()}</span>}
           </Show>
-          <Show when={windowApiError()}>
-            {(error) => <span class="overlay-debug-error">Window API error: {error()}</span>}
-          </Show>
         </div>
       </Show>
       <Toaster
@@ -879,7 +871,7 @@ function ToastOverlay() {
         position="top-right"
         richColors
         closeButton
-        expand
+        expand={false}
         visibleToasts={4}
         duration={Number.POSITIVE_INFINITY}
         pauseWhenPageIsHidden={false}

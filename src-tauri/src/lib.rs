@@ -158,7 +158,7 @@ fn default_notification_sound_enabled() -> bool {
 }
 
 fn default_notification_overlay_debug_visible() -> bool {
-    true
+    false
 }
 
 impl Default for AppSettings {
@@ -648,20 +648,18 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         let work_area = monitor.work_area();
         let scale = monitor.scale_factor();
         let logical_width = 440.0 * scale;
-        let logical_height = 520.0 * scale;
-        let margin = 24.0 * scale;
-        let placement = app
+        let settings = app
             .try_state::<AppState>()
-            .and_then(|state| {
-                state
-                    .settings
-                    .lock()
-                    .ok()
-                    .map(|settings| settings.notification_overlay_placement)
-            })
-            .unwrap_or(OverlayPlacement::TopRight);
+            .and_then(|state| state.settings.lock().ok().map(|settings| settings.clone()))
+            .unwrap_or_default();
+        let logical_height = if settings.notification_overlay_debug_visible {
+            520.0 * scale
+        } else {
+            220.0 * scale
+        };
+        let margin = 24.0 * scale;
         let (x, y) = overlay_position(
-            placement,
+            settings.notification_overlay_placement,
             work_area.position.x as f64,
             work_area.position.y as f64,
             work_area.size.width as f64,
