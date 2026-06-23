@@ -1272,7 +1272,7 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         let logical_height = if settings.notification_overlay_debug_visible {
             520.0 * scale
         } else {
-            220.0 * scale
+            128.0 * scale
         };
         set_toast_overlay_bounds(
             &window,
@@ -1314,7 +1314,7 @@ fn resize_toast_overlay(app: &AppHandle, content_height: f64) -> Result<(), Stri
     let min_height = if settings.notification_overlay_debug_visible {
         520.0 * scale
     } else {
-        220.0 * scale
+        96.0 * scale
     };
     let max_height = (work_area.size.height as f64 - margin * 2.0).max(min_height);
     let requested_height = (content_height * scale).ceil() + margin;
