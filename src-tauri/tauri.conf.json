@@ -38,7 +38,7 @@
         "title": "TrayBits Eye Rest",
         "url": "index.html?view=eye-rest",
         "width": 380,
-        "height": 220,
+        "height": 300,
         "resizable": false,
         "decorations": false,
         "transparent": true,

@@ -582,6 +582,7 @@ button {
   align-content: start;
   gap: 12px;
   height: 100%;
+  overflow: auto;
   padding: 18px;
   border: 1px solid rgba(147, 197, 253, 0.72);
   border-radius: 8px;
@@ -634,6 +635,11 @@ button {
   color: #ffffff;
   background: #2563eb;
   font-weight: 700;
+}
+
+.eye-rest-actions {
+  display: grid;
+  gap: 8px;
 }
 
 .eye-rest-card button:disabled {

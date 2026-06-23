@@ -9,6 +9,7 @@ use tauri::{
 const TRAY_ID: &str = "main";
 const SETTINGS_FILE: &str = "settings.json";
 const DEFAULT_NOTIFICATION_SOUND_PRESET: &str = "aosp-argon";
+const EYE_REST_REST_MILLIS: u64 = 20_000;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -425,8 +426,20 @@ struct AppState {
 #[derive(Clone, Debug, Default)]
 struct EyeRestState {
     next_due_at: u64,
-    active: bool,
+    phase: EyeRestPhase,
+    rest_started_at: Option<u64>,
     rest_ready_at: Option<u64>,
+    completion_sound_played: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum EyeRestPhase {
+    #[default]
+    Idle,
+    Prompt,
+    Resting,
+    Done,
 }
 
 #[derive(Clone, Serialize)]
@@ -435,7 +448,9 @@ struct EyeRestStatus {
     enabled: bool,
     interval_minutes: u32,
     active: bool,
+    phase: EyeRestPhase,
     next_due_at: u64,
+    rest_started_at: Option<u64>,
     rest_ready_at: Option<u64>,
     now: u64,
 }
@@ -599,6 +614,89 @@ fn get_eye_rest_status(state: State<'_, AppState>) -> Result<EyeRestStatus, Stri
 }
 
 #[tauri::command]
+fn start_eye_rest_timer(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<EyeRestStatus, String> {
+    let mut settings = state
+        .settings
+        .lock()
+        .map(|settings| settings.clone())
+        .map_err(|error| error.to_string())?;
+    settings.eye_rest_reminder.enabled = true;
+    settings.eye_rest_reminder.interval_minutes =
+        settings.eye_rest_reminder.interval_minutes.clamp(1, 240);
+    save_settings(&app, &settings)?;
+    {
+        let mut current_settings = state.settings.lock().map_err(|error| error.to_string())?;
+        *current_settings = settings.clone();
+    }
+    sync_eye_rest_settings(state.inner(), &settings.eye_rest_reminder);
+    hide_eye_rest_overlay(app)?;
+    eye_rest_status(state.inner())
+}
+
+#[tauri::command]
+fn stop_eye_rest_timer(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<EyeRestStatus, String> {
+    let mut settings = state
+        .settings
+        .lock()
+        .map(|settings| settings.clone())
+        .map_err(|error| error.to_string())?;
+    settings.eye_rest_reminder.enabled = false;
+    save_settings(&app, &settings)?;
+    {
+        let mut current_settings = state.settings.lock().map_err(|error| error.to_string())?;
+        *current_settings = settings.clone();
+    }
+    sync_eye_rest_settings(state.inner(), &settings.eye_rest_reminder);
+    hide_eye_rest_overlay(app)?;
+    eye_rest_status(state.inner())
+}
+
+#[tauri::command]
+fn skip_eye_rest_timer(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<EyeRestStatus, String> {
+    let mut settings = state
+        .settings
+        .lock()
+        .map(|settings| settings.clone())
+        .map_err(|error| error.to_string())?;
+    settings.eye_rest_reminder.enabled = true;
+    save_settings(&app, &settings)?;
+    {
+        let mut current_settings = state.settings.lock().map_err(|error| error.to_string())?;
+        *current_settings = settings.clone();
+    }
+    open_eye_rest_prompt(&app, state.inner(), true)?;
+    eye_rest_status(state.inner())
+}
+
+#[tauri::command]
+fn start_eye_rest_break(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<EyeRestStatus, String> {
+    let now = monotonic_millis();
+    {
+        let mut eye_rest = state.eye_rest.lock().map_err(|error| error.to_string())?;
+        eye_rest.phase = EyeRestPhase::Resting;
+        eye_rest.rest_started_at = Some(now);
+        eye_rest.rest_ready_at = Some(now + EYE_REST_REST_MILLIS);
+        eye_rest.completion_sound_played = false;
+    }
+    let status = eye_rest_status(state.inner())?;
+    app.emit_to("eye-rest", "traybits://eye-rest-updated", status.clone())
+        .map_err(|error| error.to_string())?;
+    Ok(status)
+}
+
+#[tauri::command]
 fn complete_eye_rest(app: AppHandle, state: State<'_, AppState>) -> Result<EyeRestStatus, String> {
     let settings = state
         .settings
@@ -608,8 +706,10 @@ fn complete_eye_rest(app: AppHandle, state: State<'_, AppState>) -> Result<EyeRe
     let now = monotonic_millis();
     {
         let mut eye_rest = state.eye_rest.lock().map_err(|error| error.to_string())?;
-        eye_rest.active = false;
+        eye_rest.phase = EyeRestPhase::Idle;
+        eye_rest.rest_started_at = None;
         eye_rest.rest_ready_at = None;
+        eye_rest.completion_sound_played = false;
         eye_rest.next_due_at = if settings.eye_rest_reminder.enabled {
             now + eye_rest_interval_millis(&settings.eye_rest_reminder)
         } else {
@@ -954,13 +1054,17 @@ fn sync_eye_rest_settings(state: &AppState, settings: &EyeRestReminderSettings) 
     let now = monotonic_millis();
     if let Ok(mut eye_rest) = state.eye_rest.lock() {
         if settings.enabled {
-            eye_rest.active = false;
+            eye_rest.phase = EyeRestPhase::Idle;
+            eye_rest.rest_started_at = None;
             eye_rest.rest_ready_at = None;
+            eye_rest.completion_sound_played = false;
             eye_rest.next_due_at = now + eye_rest_interval_millis(settings);
         } else {
             eye_rest.next_due_at = 0;
-            eye_rest.active = false;
+            eye_rest.phase = EyeRestPhase::Idle;
+            eye_rest.rest_started_at = None;
             eye_rest.rest_ready_at = None;
+            eye_rest.completion_sound_played = false;
         }
     }
 }
@@ -1076,8 +1180,10 @@ fn eye_rest_status(state: &AppState) -> Result<EyeRestStatus, String> {
     Ok(EyeRestStatus {
         enabled: settings.enabled,
         interval_minutes: settings.interval_minutes,
-        active: eye_rest.active,
+        active: eye_rest.phase != EyeRestPhase::Idle,
+        phase: eye_rest.phase,
         next_due_at: eye_rest.next_due_at,
+        rest_started_at: eye_rest.rest_started_at,
         rest_ready_at: eye_rest.rest_ready_at,
         now: monotonic_millis(),
     })
@@ -1096,7 +1202,7 @@ fn show_eye_rest_window(app: &AppHandle) -> Result<(), String> {
         let work_area = monitor.work_area();
         let scale = monitor.scale_factor();
         let logical_width = 380.0 * scale;
-        let logical_height = 220.0 * scale;
+        let logical_height = 300.0 * scale;
         let margin = 24.0 * scale;
         let x = work_area.position.x as f64 + work_area.size.width as f64 - logical_width - margin;
         let y =
@@ -1113,6 +1219,29 @@ fn show_eye_rest_window(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     window.show().map_err(|error| error.to_string())?;
     refresh_overlay_topmost(&window)
+}
+
+fn open_eye_rest_prompt(app: &AppHandle, state: &AppState, play_sound: bool) -> Result<(), String> {
+    {
+        let mut eye_rest = state.eye_rest.lock().map_err(|error| error.to_string())?;
+        eye_rest.phase = EyeRestPhase::Prompt;
+        eye_rest.rest_started_at = None;
+        eye_rest.rest_ready_at = None;
+        eye_rest.completion_sound_played = false;
+    }
+    show_eye_rest_window(app)?;
+    if play_sound {
+        let preset_id = state
+            .settings
+            .lock()
+            .ok()
+            .map(|settings| settings.notification_sound_preset.clone())
+            .unwrap_or_else(default_notification_sound_preset);
+        let _ = notification_sound::play(app, preset_id.as_str());
+    }
+    let status = eye_rest_status(state)?;
+    app.emit_to("eye-rest", "traybits://eye-rest-updated", status)
+        .map_err(|error| error.to_string())
 }
 
 fn show_toast_window(app: &AppHandle) -> Result<(), String> {
@@ -1494,12 +1623,10 @@ fn set_notification_capture_status(
 mod eye_rest_timer {
     use super::{
         eye_rest_interval_millis, eye_rest_status, monotonic_millis, notification_sound,
-        show_eye_rest_window, AppHandle, AppState,
+        open_eye_rest_prompt, AppHandle, AppState, EyeRestPhase,
     };
     use std::{thread, time::Duration};
     use tauri::{Emitter, Manager};
-
-    const REST_SECONDS: u64 = 20;
 
     pub fn start(app: AppHandle) {
         thread::spawn(move || run_timer_loop(app));
@@ -1508,14 +1635,15 @@ mod eye_rest_timer {
     fn run_timer_loop(app: AppHandle) {
         loop {
             let state = app.state::<AppState>();
-            let trigger = {
+            let action = {
                 let settings = state
                     .settings
                     .lock()
                     .map(|settings| settings.clone())
                     .unwrap_or_default();
                 let now = monotonic_millis();
-                let mut should_trigger = false;
+                let mut should_prompt = false;
+                let mut should_complete_rest = false;
 
                 if let Ok(mut eye_rest) = state.eye_rest.lock() {
                     if settings.eye_rest_reminder.enabled {
@@ -1523,40 +1651,63 @@ mod eye_rest_timer {
                             eye_rest.next_due_at =
                                 now + eye_rest_interval_millis(&settings.eye_rest_reminder);
                         }
-                        if !eye_rest.active && now >= eye_rest.next_due_at {
-                            eye_rest.active = true;
-                            eye_rest.rest_ready_at = Some(now + REST_SECONDS * 1_000);
-                            should_trigger = true;
+                        if eye_rest.phase == EyeRestPhase::Idle && now >= eye_rest.next_due_at {
+                            should_prompt = true;
+                        }
+                        if eye_rest.phase == EyeRestPhase::Resting
+                            && eye_rest
+                                .rest_ready_at
+                                .is_some_and(|ready_at| now >= ready_at)
+                            && !eye_rest.completion_sound_played
+                        {
+                            eye_rest.phase = EyeRestPhase::Done;
+                            eye_rest.completion_sound_played = true;
+                            should_complete_rest = true;
                         }
                     } else {
                         eye_rest.next_due_at = 0;
-                        eye_rest.active = false;
+                        eye_rest.phase = EyeRestPhase::Idle;
+                        eye_rest.rest_started_at = None;
                         eye_rest.rest_ready_at = None;
+                        eye_rest.completion_sound_played = false;
                     }
                 }
 
-                if should_trigger {
-                    Some((
+                if should_prompt {
+                    EyeRestTimerAction::Prompt(settings.notification_sound_enabled)
+                } else if should_complete_rest {
+                    EyeRestTimerAction::CompleteRest((
                         settings.notification_sound_enabled,
                         settings.notification_sound_preset,
                     ))
                 } else {
-                    None
+                    EyeRestTimerAction::None
                 }
             };
 
-            if let Some((sound_enabled, sound_preset)) = trigger {
-                let _ = show_eye_rest_window(&app);
-                if sound_enabled {
-                    let _ = notification_sound::play(&app, sound_preset.as_str());
+            match action {
+                EyeRestTimerAction::Prompt(sound_enabled) => {
+                    let _ = open_eye_rest_prompt(&app, state.inner(), sound_enabled);
                 }
-                if let Ok(status) = eye_rest_status(state.inner()) {
-                    let _ = app.emit_to("eye-rest", "traybits://eye-rest-started", status);
+                EyeRestTimerAction::CompleteRest((sound_enabled, sound_preset)) => {
+                    if sound_enabled {
+                        let _ = notification_sound::play(&app, sound_preset.as_str());
+                    }
+                    if let Ok(status) = eye_rest_status(state.inner()) {
+                        let _ = app.emit_to("eye-rest", "traybits://eye-rest-updated", status);
+                    }
                 }
+                EyeRestTimerAction::None => {}
             }
 
             thread::sleep(Duration::from_millis(1_000));
         }
+    }
+
+    enum EyeRestTimerAction {
+        None,
+        Prompt(bool),
+        CompleteRest((bool, String)),
     }
 }
 
@@ -2083,6 +2234,10 @@ pub fn run() {
             preview_notification_sound,
             push_demo_notification,
             push_demo_toast,
+            skip_eye_rest_timer,
+            start_eye_rest_break,
+            start_eye_rest_timer,
+            stop_eye_rest_timer,
             update_app_settings
         ])
         .run(tauri::generate_context!())

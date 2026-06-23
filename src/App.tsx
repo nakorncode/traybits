@@ -80,7 +80,9 @@ type EyeRestStatus = {
   enabled: boolean;
   intervalMinutes: number;
   active: boolean;
+  phase: "idle" | "prompt" | "resting" | "done";
   nextDueAt: number;
+  restStartedAt?: number;
   restReadyAt?: number;
   now: number;
 };
@@ -700,10 +702,17 @@ function EyeRestPanel(props: {
     if (latest) setStatus(latest);
   }
 
+  async function runEyeRestAction(command: "start_eye_rest_timer" | "stop_eye_rest_timer" | "skip_eye_rest_timer") {
+    const latest = await invoke<EyeRestStatus>(command).catch(() => undefined);
+    if (latest) setStatus(latest);
+  }
+
   const nextDueText = createMemo(() => {
     const current = status();
     if (!current?.enabled) return "Disabled";
-    if (current.active) return "Rest reminder is active";
+    if (current.phase === "prompt") return "Ready to rest";
+    if (current.phase === "resting") return "Resting now";
+    if (current.phase === "done") return "Rest complete";
     if (!current.nextDueAt) return "Timer is preparing";
     const remaining = Math.max(0, current.nextDueAt - current.now);
     return `${formatDuration(remaining)} remaining`;
@@ -712,7 +721,9 @@ function EyeRestPanel(props: {
   const elapsedText = createMemo(() => {
     const current = status();
     if (!current?.enabled || !current.nextDueAt) return "Not running";
-    if (current.active) return "Interval complete";
+    if (current.phase === "prompt" || current.phase === "resting" || current.phase === "done") {
+      return "Interval complete";
+    }
     const intervalMillis = current.intervalMinutes * 60_000;
     const remaining = Math.max(0, current.nextDueAt - current.now);
     return formatDuration(Math.max(0, intervalMillis - remaining));
@@ -721,7 +732,11 @@ function EyeRestPanel(props: {
   const remainingText = createMemo(() => {
     const current = status();
     if (!current?.enabled || !current.nextDueAt) return "Not running";
-    if (current.active) return "Rest reminder is active";
+    if (current.phase === "prompt") return "Waiting to start rest";
+    if (current.phase === "resting") {
+      return `${formatDuration(Math.max(0, (current.restReadyAt ?? current.now) - current.now))} rest left`;
+    }
+    if (current.phase === "done") return "Ready to continue";
     return formatDuration(Math.max(0, current.nextDueAt - current.now));
   });
 
@@ -734,18 +749,28 @@ function EyeRestPanel(props: {
         </div>
         <p>
           TrayBits opens a dedicated bottom-right overlay when the interval ends, then waits for a
-          20-second rest before the timer can continue.
+          button click before starting the 20-second rest.
         </p>
         <div class="settings-list">
-          <label class="toggle-row">
-            <input
-              type="checkbox"
-              checked={props.settings?.enabled ?? false}
-              disabled={!props.settings}
-              onChange={(event) => props.updateSettings({ enabled: event.currentTarget.checked })}
-            />
-            Enable Eye Rest Reminder
-          </label>
+          <div class="button-row">
+            <button
+              type="button"
+              disabled={status()?.enabled}
+              onClick={() => runEyeRestAction("start_eye_rest_timer")}
+            >
+              Start
+            </button>
+            <button
+              type="button"
+              disabled={!status()?.enabled}
+              onClick={() => runEyeRestAction("stop_eye_rest_timer")}
+            >
+              Stop
+            </button>
+            <button type="button" onClick={() => runEyeRestAction("skip_eye_rest_timer")}>
+              Skip to rest now
+            </button>
+          </div>
           <label class="field-row">
             <span>Reminder interval</span>
             <div class="inline-input-row">
@@ -758,6 +783,7 @@ function EyeRestPanel(props: {
                 disabled={!props.settings}
                 onChange={(event) =>
                   props.updateSettings({
+                    enabled: status()?.enabled ?? props.settings?.enabled ?? false,
                     intervalMinutes: Math.max(
                       1,
                       Math.min(240, Number(event.currentTarget.value) || 20),
@@ -1098,7 +1124,7 @@ function EyeRestOverlay() {
     void refresh();
     const poll = window.setInterval(refresh, 500);
     let unlistenStarted: (() => void) | undefined;
-    void listen<EyeRestStatus>("traybits://eye-rest-started", (event) => {
+    void listen<EyeRestStatus>("traybits://eye-rest-updated", (event) => {
       setStatus(event.payload);
     }).then((unlisten) => {
       unlistenStarted = unlisten;
@@ -1123,11 +1149,34 @@ function EyeRestOverlay() {
 
   const remainingSeconds = createMemo(() => {
     const current = status();
-    if (!current?.restReadyAt) return 20;
+    if (current?.phase !== "resting" || !current.restReadyAt) return 20;
     return Math.max(0, Math.ceil((current.restReadyAt - current.now) / 1_000));
   });
 
-  const canResume = createMemo(() => remainingSeconds() === 0);
+  const titleText = createMemo(() => {
+    const phase = status()?.phase;
+    if (phase === "resting") return "Rest your eyes";
+    if (phase === "done") return "Rest complete";
+    return "Ready for an eye break";
+  });
+
+  const bodyText = createMemo(() => {
+    const phase = status()?.phase;
+    if (phase === "resting") return "Look away, blink slowly, and keep your focus off the screen.";
+    if (phase === "done") return "Good. Continue when you are ready to start the next interval.";
+    return "Press start when you are ready, then rest for a full 20 seconds.";
+  });
+
+  const canStartRest = createMemo(() => status()?.phase === "prompt");
+  const canResume = createMemo(() => status()?.phase === "done");
+
+  async function startRest() {
+    const latest = await invoke<EyeRestStatus>("start_eye_rest_break").catch((reason) => {
+      setError(String(reason));
+      return undefined;
+    });
+    if (latest) setStatus(latest);
+  }
 
   async function resume() {
     const latest = await invoke<EyeRestStatus>("complete_eye_rest").catch((reason) => {
@@ -1142,16 +1191,23 @@ function EyeRestOverlay() {
       <section class="eye-rest-card">
         <div>
           <span>Eye Rest Reminder</span>
-          <strong>Look away for 20 seconds</strong>
+          <strong>{titleText()}</strong>
         </div>
-        <p>Relax your eyes, blink slowly, and focus on something farther away.</p>
-        <div class="eye-rest-countdown">
-          <strong>{remainingSeconds()}</strong>
-          <span>seconds</span>
+        <p>{bodyText()}</p>
+        <Show when={status()?.phase === "resting"}>
+          <div class="eye-rest-countdown">
+            <strong>{remainingSeconds()}</strong>
+            <span>seconds</span>
+          </div>
+        </Show>
+        <div class="eye-rest-actions">
+          <button type="button" disabled={!canStartRest()} onClick={startRest}>
+            Start 20-second rest
+          </button>
+          <button type="button" disabled={!canResume()} onClick={resume}>
+            Continue timer
+          </button>
         </div>
-        <button type="button" disabled={!canResume()} onClick={resume}>
-          Continue timer
-        </button>
         <Show when={error()}>
           {(message) => <small class="eye-rest-error">{message()}</small>}
         </Show>
