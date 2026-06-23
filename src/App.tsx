@@ -40,6 +40,17 @@ type AppNotification = {
   silent?: boolean;
 };
 
+type NotificationDeliveryStatus = {
+  ok: boolean;
+  message: string;
+};
+
+type PreviewNotificationResult = {
+  notification: AppNotification;
+  nativeNotification: NotificationDeliveryStatus;
+  overlay: NotificationDeliveryStatus;
+};
+
 type NotificationListenerStatus = {
   feasible: boolean;
   api: string;
@@ -92,6 +103,7 @@ type MainAppContextValue = {
   settings: Accessor<AppSettings | undefined>;
   settingsError: Accessor<string | undefined>;
   notificationError: Accessor<string | undefined>;
+  notificationStatus: Accessor<string | undefined>;
   overlayMonitors: Accessor<OverlayMonitorOption[]>;
   notifications: Accessor<AppNotification[]>;
   captureStatus: Accessor<NotificationCaptureStatus | undefined>;
@@ -206,6 +218,7 @@ function MainApp(props: ParentProps) {
   const [settings, setSettings] = createSignal<AppSettings>();
   const [settingsError, setSettingsError] = createSignal<string>();
   const [notificationError, setNotificationError] = createSignal<string>();
+  const [notificationStatus, setNotificationStatus] = createSignal<string>();
   const [overlayMonitors, setOverlayMonitors] = createSignal<OverlayMonitorOption[]>([]);
   const [notifications, setNotifications] = createSignal<AppNotification[]>([]);
   const [captureStatus, setCaptureStatus] = createSignal<NotificationCaptureStatus>();
@@ -252,9 +265,20 @@ function MainApp(props: ParentProps) {
 
   async function pushDemoNotification() {
     setNotificationError(undefined);
+    setNotificationStatus(undefined);
     try {
-      const notification = await invoke<AppNotification>("push_demo_notification");
-      setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)]);
+      const result = await invoke<PreviewNotificationResult>("push_demo_notification");
+      setNotifications((items) => [
+        result.notification,
+        ...items.filter((item) => item.id !== result.notification.id),
+      ]);
+      const status = `Windows: ${result.nativeNotification.message} Overlay: ${result.overlay.message}`;
+      setNotificationStatus(status);
+      if (result.nativeNotification.ok && result.overlay.ok) {
+        toast.success("Preview notification requested", { description: status });
+      } else {
+        toast.warning("Preview notification has a delivery issue", { description: status });
+      }
       await refreshCaptureStatus();
     } catch (error) {
       setNotificationError(error instanceof Error ? error.message : String(error));
@@ -314,6 +338,7 @@ function MainApp(props: ParentProps) {
     settings,
     settingsError,
     notificationError,
+    notificationStatus,
     overlayMonitors,
     notifications,
     captureStatus,
@@ -388,6 +413,7 @@ function PersistentNotificationsRoute() {
       updateSettings={app.updateSettings}
       settingsError={app.settingsError()}
       notificationError={app.notificationError()}
+      notificationStatus={app.notificationStatus()}
     />
   );
 }
@@ -433,6 +459,7 @@ function PersistentNotificationsPanel(props: {
   updateSettings: (patch: Partial<AppSettings>) => void;
   settingsError?: string;
   notificationError?: string;
+  notificationStatus?: string;
 }) {
   return (
     <div class="content-grid">
@@ -520,6 +547,9 @@ function PersistentNotificationsPanel(props: {
         </Show>
         <Show when={props.notificationError}>
           <p class="error-text">{props.notificationError}</p>
+        </Show>
+        <Show when={props.notificationStatus}>
+          <p class="hint-text">{props.notificationStatus}</p>
         </Show>
       </section>
 

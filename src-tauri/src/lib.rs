@@ -5,7 +5,6 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Monitor, PhysicalPosition, State, WindowEvent,
 };
-use tauri_plugin_notification::NotificationExt;
 
 const TRAY_ID: &str = "main";
 const SETTINGS_FILE: &str = "settings.json";
@@ -44,6 +43,21 @@ struct AppNotification {
     created_at: String,
     tone: String,
     silent: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NotificationDeliveryStatus {
+    ok: bool,
+    message: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewNotificationResult {
+    notification: AppNotification,
+    native_notification: NotificationDeliveryStatus,
+    overlay: NotificationDeliveryStatus,
 }
 
 #[derive(Clone, Serialize)]
@@ -263,7 +277,7 @@ fn get_notification_overlay_monitors(app: AppHandle) -> Result<Vec<OverlayMonito
 fn push_demo_notification(
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<AppNotification, String> {
+) -> Result<PreviewNotificationResult, String> {
     let notification = AppNotification {
         id: format!("demo-{}", monotonic_millis()),
         title: "Demo notification".into(),
@@ -276,10 +290,23 @@ fn push_demo_notification(
         silent: false,
     };
 
-    show_native_notification(&app, &notification)?;
+    let native_notification = match show_native_notification(&app, &notification) {
+        Ok(()) => NotificationDeliveryStatus {
+            ok: true,
+            message: "Native Windows notification sent through WinRT.".into(),
+        },
+        Err(error) => NotificationDeliveryStatus {
+            ok: false,
+            message: error,
+        },
+    };
     mark_notification_seen(state.inner(), &notification);
-    add_notification(&app, state.inner(), notification.clone(), true, true)?;
-    Ok(notification)
+    let overlay = add_notification(&app, state.inner(), notification.clone(), true, true)?;
+    Ok(PreviewNotificationResult {
+        notification,
+        native_notification,
+        overlay,
+    })
 }
 
 #[tauri::command]
@@ -339,7 +366,7 @@ fn add_notification(
     notification: AppNotification,
     show_overlay: bool,
     play_sound: bool,
-) -> Result<(), String> {
+) -> Result<NotificationDeliveryStatus, String> {
     {
         let mut notifications = state
             .notifications
@@ -349,9 +376,23 @@ fn add_notification(
         notifications.truncate(100);
     }
 
-    if show_overlay {
-        let _ = show_toast_window(app);
-    }
+    let overlay = if show_overlay {
+        match show_toast_window(app) {
+            Ok(()) => NotificationDeliveryStatus {
+                ok: true,
+                message: "Transparent overlay window was requested.".into(),
+            },
+            Err(error) => NotificationDeliveryStatus {
+                ok: false,
+                message: error,
+            },
+        }
+    } else {
+        NotificationDeliveryStatus {
+            ok: true,
+            message: "Overlay intentionally skipped.".into(),
+        }
+    };
     if play_sound {
         notification_sound::play(app);
     }
@@ -361,16 +402,11 @@ fn add_notification(
         app.emit_to("toast", "traybits://notification-added", notification)
             .map_err(|error| error.to_string())?;
     }
-    Ok(())
+    Ok(overlay)
 }
 
 fn show_native_notification(app: &AppHandle, notification: &AppNotification) -> Result<(), String> {
-    app.notification()
-        .builder()
-        .title(notification.title.clone())
-        .body(notification.body.clone())
-        .show()
-        .map_err(|error| format!("Could not send Windows notification: {error}"))
+    native_windows_notification::show(app, notification)
 }
 
 fn mark_notification_seen(state: &AppState, notification: &AppNotification) {
@@ -778,6 +814,53 @@ mod notification_sound {
     use super::AppHandle;
 
     pub fn play(_app: &AppHandle) {}
+}
+
+#[cfg(target_os = "windows")]
+mod native_windows_notification {
+    use super::{AppHandle, AppNotification};
+    use tauri_winrt_notification::{Duration, Toast};
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+
+    pub fn show(app: &AppHandle, notification: &AppNotification) -> Result<(), String> {
+        let app_id = app.config().identifier.clone();
+        register_app_user_model_id(&app_id)?;
+
+        Toast::new(&app_id)
+            .title(&notification.title)
+            .text1(&notification.body)
+            .duration(Duration::Short)
+            .show()
+            .map_err(|error| format!("Could not send WinRT notification: {error}"))
+    }
+
+    fn register_app_user_model_id(app_id: &str) -> Result<(), String> {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let (key, _) = hkcu
+            .create_subkey(format!(r"SOFTWARE\Classes\AppUserModelId\{app_id}"))
+            .map_err(|error| format!("Could not register AppUserModelId: {error}"))?;
+
+        key.set_value("DisplayName", &"TrayBits")
+            .map_err(|error| format!("Could not write notification display name: {error}"))?;
+        key.set_value("IconBackgroundColor", &"0")
+            .map_err(|error| format!("Could not write notification icon color: {error}"))?;
+
+        if let Ok(exe) = std::env::current_exe() {
+            let icon_uri = exe.to_string_lossy().to_string();
+            let _ = key.set_value("IconUri", &icon_uri);
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+mod native_windows_notification {
+    use super::{AppHandle, AppNotification};
+
+    pub fn show(_app: &AppHandle, _notification: &AppNotification) -> Result<(), String> {
+        Err("Native Windows notifications are only available on Windows.".into())
+    }
 }
 
 fn set_notification_capture_status(
@@ -1266,7 +1349,6 @@ mod keyboard {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let settings = load_settings(app.handle());
             app.manage(AppState {

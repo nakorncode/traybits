@@ -5,7 +5,6 @@
   "windows": ["main", "toast"],
   "permissions": [
     "core:default",
-    "notification:default",
     "opener:default"
   ]
 }
