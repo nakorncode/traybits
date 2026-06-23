@@ -1024,7 +1024,8 @@ function CurrentLanguageIndicatorPanel(props: {
         </div>
         <p>
           Shows a compact language marker such as TH, EN, or JA when Windows reports that the
-          foreground input language changed. Caret placement uses Win32 caret data when available.
+          foreground input language changed. The marker appears only when Windows exposes a real
+          caret rectangle through UI Automation or Win32 caret APIs.
         </p>
         <div class="settings-list">
           <label class="toggle-row">
@@ -1064,7 +1065,7 @@ function CurrentLanguageIndicatorPanel(props: {
           </div>
           <div>
             <dt>Caret position</dt>
-            <dd>{status()?.caretAvailable ? "Available" : "Fallback to focused window"}</dd>
+            <dd>{status()?.caretAvailable ? "Available" : "Not available in the focused app"}</dd>
           </div>
           <div>
             <dt>Source</dt>

@@ -2146,17 +2146,28 @@ mod language_indicator {
     use windows::{
         core::PCWSTR,
         Win32::{
-            Foundation::{POINT, RECT},
+            Foundation::POINT,
             Globalization::{
                 GetLocaleInfoEx, LCIDToLocaleName, LOCALE_ALLOW_NEUTRAL_NAMES,
                 LOCALE_SISO639LANGNAME2, LOCALE_SLOCALIZEDDISPLAYNAME,
             },
             Graphics::Gdi::ClientToScreen,
+            System::{
+                Com::{
+                    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+                },
+                Ole::{
+                    SafeArrayDestroy, SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound,
+                },
+            },
             UI::{
+                Accessibility::{
+                    CUIAutomation, IUIAutomation, IUIAutomationTextPattern2, UIA_TextPattern2Id,
+                },
                 Input::KeyboardAndMouse::{GetKeyboardLayout, GetKeyboardLayoutList, HKL},
                 WindowsAndMessaging::{
-                    GetForegroundWindow, GetGUIThreadInfo, GetWindowRect, GetWindowThreadProcessId,
-                    GUITHREADINFO, GUI_CARETBLINKING,
+                    GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, GUITHREADINFO,
+                    GUI_CARETBLINKING,
                 },
             },
         },
@@ -2198,17 +2209,18 @@ mod language_indicator {
 
     pub fn status(enabled: bool) -> CurrentLanguageIndicatorStatus {
         let current = active_language_snapshot().map(|snapshot| snapshot.language);
-        let caret_available = caret_position()
-            .map(|position| position.caret_available)
-            .unwrap_or(false);
+        let caret = caret_position();
+        let caret_available = caret.is_some();
         CurrentLanguageIndicatorStatus {
             enabled,
             current,
             installed: installed_languages(),
             caret_available,
-            source: "GetKeyboardLayout + GetGUIThreadInfo".into(),
+            source: caret
+                .map(|position| position.source.to_string())
+                .unwrap_or_else(|| "No caret provider available".into()),
             message: if enabled {
-                "The monitor is enabled. It shows the marker when the foreground input language changes.".into()
+                "The monitor is enabled. It shows the marker only when TrayBits can read the real caret position.".into()
             } else {
                 "The monitor is disabled. Enable it to test the caret language marker.".into()
             },
@@ -2296,9 +2308,9 @@ mod language_indicator {
         let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
         let layout = unsafe { GetKeyboardLayout(thread_id) };
         let language = language_from_layout(layout)?;
-        let position = caret_position().or_else(foreground_fallback_position)?;
+        let position = caret_position()?;
         Some(IndicatorSnapshot {
-            signature: language.id.clone(),
+            signature: format!("{}:{}", language.id, position.source),
             language,
             x: position.x,
             y: position.y,
@@ -2311,9 +2323,82 @@ mod language_indicator {
         x: i32,
         y: i32,
         caret_available: bool,
+        source: &'static str,
     }
 
     fn caret_position() -> Option<IndicatorPosition> {
+        uia_caret_position().or_else(win32_caret_position)
+    }
+
+    fn uia_caret_position() -> Option<IndicatorPosition> {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let automation: IUIAutomation =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+            let element = automation.GetFocusedElement().ok()?;
+            let pattern: IUIAutomationTextPattern2 =
+                element.GetCurrentPatternAs(UIA_TextPattern2Id).ok()?;
+            let mut is_active = windows::core::BOOL(0);
+            let range = pattern.GetCaretRange(&mut is_active).ok()?;
+            if !is_active.as_bool() {
+                return None;
+            }
+            let rectangles = range.GetBoundingRectangles().ok()?;
+            let first = first_uia_text_rectangle(rectangles)?;
+            Some(IndicatorPosition {
+                x: first.x.round() as i32 + first.width.max(1.0).round() as i32 + 8,
+                y: first.y.round() as i32 + first.height.max(1.0).round() as i32 + 8,
+                caret_available: true,
+                source: "UI Automation TextPattern2",
+            })
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct UiaTextRectangle {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    }
+
+    fn first_uia_text_rectangle(
+        rectangles: *mut windows::Win32::System::Com::SAFEARRAY,
+    ) -> Option<UiaTextRectangle> {
+        if rectangles.is_null() {
+            return None;
+        }
+
+        let result = unsafe {
+            let lower = SafeArrayGetLBound(rectangles, 1).ok()?;
+            let upper = SafeArrayGetUBound(rectangles, 1).ok()?;
+            if upper - lower + 1 < 4 {
+                return None;
+            }
+
+            let mut values = [0.0_f64; 4];
+            for (offset, value) in values.iter_mut().enumerate() {
+                let index = lower + offset as i32;
+                SafeArrayGetElement(
+                    rectangles,
+                    &index,
+                    value as *mut f64 as *mut core::ffi::c_void,
+                )
+                .ok()?;
+            }
+
+            Some(UiaTextRectangle {
+                x: values[0],
+                y: values[1],
+                width: values[2],
+                height: values[3],
+            })
+        };
+        let _ = unsafe { SafeArrayDestroy(rectangles) };
+        result
+    }
+
+    fn win32_caret_position() -> Option<IndicatorPosition> {
         let mut info = GUITHREADINFO {
             cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
             ..Default::default()
@@ -2335,20 +2420,7 @@ mod language_indicator {
             x: point.x,
             y: point.y,
             caret_available: true,
-        })
-    }
-
-    fn foreground_fallback_position() -> Option<IndicatorPosition> {
-        let foreground_window = unsafe { GetForegroundWindow() };
-        if foreground_window.is_invalid() {
-            return None;
-        }
-        let mut rect = RECT::default();
-        unsafe { GetWindowRect(foreground_window, &mut rect).ok()? };
-        Some(IndicatorPosition {
-            x: rect.left + 24,
-            y: rect.top + 72,
-            caret_available: false,
+            source: "Win32 GetGUIThreadInfo",
         })
     }
 
