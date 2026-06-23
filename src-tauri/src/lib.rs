@@ -65,6 +65,8 @@ struct AppSettings {
     run_high_priority: bool,
     close_behavior: CloseBehavior,
     enable_tray_icon: bool,
+    #[serde(default = "default_notification_overlay_placement")]
+    notification_overlay_placement: OverlayPlacement,
     caps_lock_language_switch: CapsLockLanguageSwitchSettings,
 }
 
@@ -73,6 +75,20 @@ struct AppSettings {
 enum CloseBehavior {
     MinimizeToTray,
     Exit,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum OverlayPlacement {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    MiddleLeft,
+    Center,
+    MiddleRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -97,6 +113,10 @@ struct AppState {
     captured_windows_notification_ids: Mutex<HashSet<u32>>,
 }
 
+fn default_notification_overlay_placement() -> OverlayPlacement {
+    OverlayPlacement::TopRight
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -104,6 +124,7 @@ impl Default for AppSettings {
             run_high_priority: false,
             close_behavior: CloseBehavior::MinimizeToTray,
             enable_tray_icon: true,
+            notification_overlay_placement: default_notification_overlay_placement(),
             caps_lock_language_switch: CapsLockLanguageSwitchSettings {
                 enabled: false,
                 preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
@@ -419,13 +440,57 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         let logical_width = 440.0 * scale;
         let logical_height = 520.0 * scale;
         let margin = 24.0 * scale;
-        let x = size.width as f64 - logical_width - margin;
-        let y = size.height as f64 - logical_height - margin;
+        let placement = app
+            .try_state::<AppState>()
+            .and_then(|state| {
+                state
+                    .settings
+                    .lock()
+                    .ok()
+                    .map(|settings| settings.notification_overlay_placement)
+            })
+            .unwrap_or(OverlayPlacement::TopRight);
+        let (x, y) = overlay_position(
+            placement,
+            size.width as f64,
+            size.height as f64,
+            logical_width,
+            logical_height,
+            margin,
+        );
         let _ = window.set_position(PhysicalPosition::new(x.max(0.0) as i32, y.max(0.0) as i32));
     }
 
     let _ = window.set_always_on_top(true);
     window.show().map_err(|error| error.to_string())
+}
+
+fn overlay_position(
+    placement: OverlayPlacement,
+    screen_width: f64,
+    screen_height: f64,
+    overlay_width: f64,
+    overlay_height: f64,
+    margin: f64,
+) -> (f64, f64) {
+    let left = margin;
+    let center_x = (screen_width - overlay_width) / 2.0;
+    let right = screen_width - overlay_width - margin;
+    let top = margin;
+    let center_y = (screen_height - overlay_height) / 2.0;
+    let bottom = screen_height - overlay_height - margin;
+
+    match placement {
+        OverlayPlacement::TopLeft => (left, top),
+        OverlayPlacement::TopCenter => (center_x, top),
+        OverlayPlacement::TopRight => (right, top),
+        OverlayPlacement::MiddleLeft => (left, center_y),
+        OverlayPlacement::Center => (center_x, center_y),
+        OverlayPlacement::MiddleRight => (right, center_y),
+        OverlayPlacement::BottomLeft => (left, bottom),
+        OverlayPlacement::BottomCenter => (center_x, bottom),
+        OverlayPlacement::BottomRight => (right, bottom),
+    }
 }
 
 fn monotonic_millis() -> u64 {

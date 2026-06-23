@@ -289,6 +289,15 @@ button {
   font-size: 13px;
 }
 
+.compact-facts {
+  width: 100%;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #e1e5ee;
+  border-radius: 8px;
+  background: #fafbff;
+}
+
 .steps {
   display: grid;
   gap: 10px;
@@ -354,6 +363,107 @@ button {
 
 .error-text {
   color: #b42318;
+}
+
+.placement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.placement-grid button {
+  display: grid;
+  width: 52px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid #ccd3df;
+  border-radius: 6px;
+  color: #344054;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.placement-grid button:hover:not(:disabled),
+.placement-grid button.selected {
+  border-color: #2563eb;
+  color: #1646a7;
+  background: #e9f0ff;
+}
+
+.placement-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.notification-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.notification-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #e1e5ee;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.notification-row div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.notification-row span,
+.notification-row small,
+.toast-copy small {
+  color: #697386;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.notification-row strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-row p {
+  max-width: none;
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.notification-row button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #cfd4df;
+  border-radius: 6px;
+  color: #1e293b;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notification-row button:hover {
+  border-color: #8da2cf;
+  background: #f7f9ff;
+}
+
+.empty-text {
+  margin-top: 18px;
+  color: #667085;
 }
 
 .toast-stage {
@@ -431,6 +541,10 @@ button {
   line-height: 1.35;
 }
 
+.toast-copy small {
+  margin-top: 3px;
+}
+
 .toast-card button {
   width: 26px;
   height: 26px;
@@ -483,6 +597,10 @@ button {
   }
 
   .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notification-row {
     grid-template-columns: 1fr;
   }
 }
