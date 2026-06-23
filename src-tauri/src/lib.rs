@@ -8,6 +8,8 @@ use tauri::{
 
 const TRAY_ID: &str = "main";
 const SETTINGS_FILE: &str = "settings.json";
+const NOTIFICATION_SOUND_FILE: &str = "traybits-notification.wav";
+const NOTIFICATION_SOUND_ASSET_PATH: &str = "assets/sounds/traybits-notification.wav";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -285,6 +287,7 @@ fn add_notification(
     }
 
     let _ = show_toast_window(app);
+    notification_sound::play(app);
     app.emit("traybits://notification-added", notification)
         .map_err(|error| error.to_string())
 }
@@ -586,6 +589,57 @@ mod priority {
     pub fn set_high_priority(_enabled: bool) -> Result<(), String> {
         Ok(())
     }
+}
+
+#[cfg(target_os = "windows")]
+mod notification_sound {
+    use super::{AppHandle, NOTIFICATION_SOUND_ASSET_PATH, NOTIFICATION_SOUND_FILE};
+    use std::{os::windows::ffi::OsStrExt, path::PathBuf};
+    use tauri::Manager;
+    use windows::core::PCWSTR;
+    use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_NODEFAULT};
+
+    pub fn play(app: &AppHandle) {
+        let Some(path) = sound_path(app) else {
+            return;
+        };
+        let mut wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            let _ = PlaySoundW(
+                PCWSTR(wide.as_mut_ptr()),
+                None,
+                SND_FILENAME | SND_ASYNC | SND_NODEFAULT,
+            );
+        }
+    }
+
+    fn sound_path(app: &AppHandle) -> Option<PathBuf> {
+        let mut candidates = Vec::new();
+
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            candidates.push(resource_dir.join(NOTIFICATION_SOUND_FILE));
+            candidates.push(resource_dir.join(NOTIFICATION_SOUND_ASSET_PATH));
+        }
+
+        if let Ok(current_dir) = std::env::current_dir() {
+            candidates.push(current_dir.join(NOTIFICATION_SOUND_ASSET_PATH));
+            candidates.push(current_dir.join("..").join(NOTIFICATION_SOUND_ASSET_PATH));
+        }
+
+        candidates.into_iter().find(|path| path.is_file())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+mod notification_sound {
+    use super::AppHandle;
+
+    pub fn play(_app: &AppHandle) {}
 }
 
 fn set_notification_capture_status(

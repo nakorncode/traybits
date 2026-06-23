@@ -360,6 +360,10 @@ function PersistentNotificationsPanel(props: {
             <dt>Status</dt>
             <dd>{props.captureStatus?.message ?? "Starting Windows notification capture..."}</dd>
           </div>
+          <div>
+            <dt>Sound</dt>
+            <dd>Short interface tone plays when a persistent notification is added.</dd>
+          </div>
         </dl>
         <div class="button-row">
           <button type="button" onClick={props.pushDemoNotification}>
