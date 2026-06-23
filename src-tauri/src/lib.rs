@@ -353,6 +353,8 @@ struct AppSettings {
     enable_tray_icon: bool,
     #[serde(default = "default_native_notification_enabled")]
     native_notification_enabled: bool,
+    #[serde(default = "default_dismiss_mirrored_windows_notifications")]
+    dismiss_mirrored_windows_notifications: bool,
     #[serde(default = "default_notification_sound_enabled")]
     notification_sound_enabled: bool,
     #[serde(default = "default_notification_sound_preset")]
@@ -425,6 +427,10 @@ fn default_native_notification_enabled() -> bool {
     true
 }
 
+fn default_dismiss_mirrored_windows_notifications() -> bool {
+    false
+}
+
 fn default_notification_sound_preset() -> String {
     DEFAULT_NOTIFICATION_SOUND_PRESET.into()
 }
@@ -441,6 +447,8 @@ impl Default for AppSettings {
             close_behavior: CloseBehavior::MinimizeToTray,
             enable_tray_icon: true,
             native_notification_enabled: default_native_notification_enabled(),
+            dismiss_mirrored_windows_notifications: default_dismiss_mirrored_windows_notifications(
+            ),
             notification_sound_enabled: default_notification_sound_enabled(),
             notification_sound_preset: default_notification_sound_preset(),
             notification_overlay_placement: default_notification_overlay_placement(),
@@ -1473,11 +1481,16 @@ mod notification_capture {
                 continue;
             }
 
-            let sound_enabled = state
+            let (sound_enabled, dismiss_after_mirror) = state
                 .settings
                 .lock()
-                .map(|settings| settings.notification_sound_enabled)
-                .unwrap_or(true);
+                .map(|settings| {
+                    (
+                        settings.notification_sound_enabled,
+                        settings.dismiss_mirrored_windows_notifications,
+                    )
+                })
+                .unwrap_or((true, false));
             let _ = add_notification(
                 app,
                 state,
@@ -1485,6 +1498,9 @@ mod notification_capture {
                 !initial_sync,
                 !initial_sync && sound_enabled,
             );
+            if !initial_sync && dismiss_after_mirror {
+                let _ = listener.RemoveNotification(notification_id);
+            }
         }
     }
 

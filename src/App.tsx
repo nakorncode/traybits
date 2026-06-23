@@ -82,6 +82,7 @@ type AppSettings = {
   closeBehavior: CloseBehavior;
   enableTrayIcon: boolean;
   nativeNotificationEnabled: boolean;
+  dismissMirroredWindowsNotifications: boolean;
   notificationSoundEnabled: boolean;
   notificationSoundPreset: string;
   notificationOverlayPlacement: OverlayPlacement;
@@ -540,7 +541,20 @@ function PersistentNotificationsPanel(props: {
               props.updateSettings({ nativeNotificationEnabled: event.currentTarget.checked })
             }
           />
-          Show native Windows notifications from TrayBits
+          Show TrayBits native Windows notifications
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.dismissMirroredWindowsNotifications ?? false}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({
+                dismissMirroredWindowsNotifications: event.currentTarget.checked,
+              })
+            }
+          />
+          Dismiss captured Windows notifications after mirroring
         </label>
         <label class="toggle-row">
           <input
