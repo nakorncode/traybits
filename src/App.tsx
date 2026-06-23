@@ -798,14 +798,23 @@ function ToastOverlay() {
   const [lastPollError, setLastPollError] = createSignal<string>();
   const announcedIds = new Set<string>();
   const activeSonnerIds = new Set<string>();
-  let initialSyncDone = false;
 
   onMount(() => {
     void syncOverlayState();
     const poll = window.setInterval(syncOverlayState, 750);
+    let unlistenAdded: (() => void) | undefined;
+
+    void listen<AppNotification>("traybits://notification-added", (event) => {
+      if (event.payload.silent) return;
+      setToasts((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)].slice(0, 4));
+      showOverlaySonner(event.payload);
+    }).then((unlisten) => {
+      unlistenAdded = unlisten;
+    });
 
     onCleanup(() => {
       window.clearInterval(poll);
+      unlistenAdded?.();
     });
   });
 
@@ -821,15 +830,8 @@ function ToastOverlay() {
       setLastPollError(undefined);
       const visibleIds = new Set(visible.map((notification) => notification.id));
 
-      if (!initialSyncDone) {
-        for (const notification of visible) {
-          announcedIds.add(notification.id);
-        }
-        initialSyncDone = true;
-      } else {
-        for (const notification of visible) {
-          showOverlaySonner(notification);
-        }
+      for (const notification of visible) {
+        showOverlaySonner(notification);
       }
 
       for (const id of Array.from(activeSonnerIds)) {
