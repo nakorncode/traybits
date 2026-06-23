@@ -172,7 +172,9 @@ export function ToastOverlay() {
 
   return (
     <div
-      ref={stageRef}
+      ref={(element) => {
+        stageRef = element;
+      }}
       class="toast-stage"
       onMouseEnter={requestOverlayResize}
       onMouseLeave={requestOverlayResize}

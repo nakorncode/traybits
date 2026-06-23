@@ -1,3 +1,4 @@
+import { Show } from "solid-js";
 import type { AppSettings, CloseBehavior } from "../types";
 
 export function SettingsPanel(props: {

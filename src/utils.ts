@@ -1,9 +1,14 @@
-export function formatTimestamp(createdAt: string) {
+export function formatTimestamp(createdAt?: string | number | Date | null) {
+  const date = createdAt instanceof Date ? createdAt : new Date(createdAt ?? Date.now());
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown time";
+  }
+
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  }).format(new Date(createdAt));
+  }).format(date);
 }
 
 export function formatDuration(millis: number) {
