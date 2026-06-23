@@ -76,6 +76,15 @@ type OverlayMonitorOption = {
   isPrimary: boolean;
 };
 
+type EyeRestStatus = {
+  enabled: boolean;
+  intervalMinutes: number;
+  active: boolean;
+  nextDueAt: number;
+  restReadyAt?: number;
+  now: number;
+};
+
 type AppSettings = {
   runOnStartup: boolean;
   runHighPriority: boolean;
@@ -88,6 +97,10 @@ type AppSettings = {
   notificationOverlayPlacement: OverlayPlacement;
   notificationOverlayMonitor: string;
   notificationOverlayDebugVisible: boolean;
+  eyeRestReminder: {
+    enabled: boolean;
+    intervalMinutes: number;
+  };
   capsLockLanguageSwitch: {
     enabled: boolean;
     preserveCapsLockWith: CapsLockFallbackHotkey;
@@ -192,6 +205,11 @@ function App() {
   if (view === "toast") {
     document.documentElement.dataset.view = "toast";
     return <ToastOverlay />;
+  }
+
+  if (view === "eye-rest") {
+    document.documentElement.dataset.view = "eye-rest";
+    return <EyeRestOverlay />;
   }
 
   delete document.documentElement.dataset.view;
@@ -413,7 +431,21 @@ function PersistentNotificationsRoute() {
 
 function EyeRestRoute() {
   const app = useMainApp();
-  return <EyeRestPanel pushToast={app.pushToast} />;
+  return (
+    <EyeRestPanel
+      settings={app.settings()?.eyeRestReminder}
+      updateSettings={(patch) =>
+        app.updateSettings({
+          eyeRestReminder: {
+            enabled: app.settings()?.eyeRestReminder.enabled ?? false,
+            intervalMinutes: app.settings()?.eyeRestReminder.intervalMinutes ?? 20,
+            ...patch,
+          },
+        })
+      }
+      settingsError={app.settingsError()}
+    />
+  );
 }
 
 function CapsLockLanguageSwitchRoute() {
@@ -643,21 +675,97 @@ function PersistentNotificationsPanel(props: {
   );
 }
 
-function EyeRestPanel(props: { pushToast: (tone: string) => Promise<void> }) {
+function EyeRestPanel(props: {
+  settings?: AppSettings["eyeRestReminder"];
+  updateSettings: (patch: Partial<AppSettings["eyeRestReminder"]>) => void;
+  settingsError?: string;
+}) {
+  const [status, setStatus] = createSignal<EyeRestStatus>();
+
+  onMount(() => {
+    void refresh();
+    const poll = window.setInterval(refresh, 1_000);
+    onCleanup(() => window.clearInterval(poll));
+  });
+
+  async function refresh() {
+    const latest = await invoke<EyeRestStatus>("get_eye_rest_status").catch(() => undefined);
+    if (latest) setStatus(latest);
+  }
+
+  const nextDueText = createMemo(() => {
+    const current = status();
+    if (!current?.enabled) return "Disabled";
+    if (current.active) return "Rest reminder is active";
+    if (!current.nextDueAt) return "Timer is preparing";
+    const remaining = Math.max(0, current.nextDueAt - current.now);
+    return `${Math.ceil(remaining / 60_000)} min remaining`;
+  });
+
   return (
-    <section class="panel primary-panel">
-      <div class="section-title">
-        <span>Reminder preview</span>
-        <strong>20-20-20 reminder flow</strong>
-      </div>
-      <p>
-        This utility can stay mostly Rust-owned: a timer decides when to notify, then emits a
-        toast-render event to the Solid overlay.
-      </p>
-      <button type="button" onClick={() => props.pushToast("rest")}>
-        Preview reminder toast
-      </button>
-    </section>
+    <div class="content-grid">
+      <section class="panel primary-panel">
+        <div class="section-title">
+          <span>Timer</span>
+          <strong>Eye rest reminder</strong>
+        </div>
+        <p>
+          TrayBits opens a dedicated bottom-right overlay when the interval ends, then waits for a
+          20-second rest before the timer can continue.
+        </p>
+        <div class="settings-list">
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={props.settings?.enabled ?? false}
+              disabled={!props.settings}
+              onChange={(event) => props.updateSettings({ enabled: event.currentTarget.checked })}
+            />
+            Enable Eye Rest Reminder
+          </label>
+          <label class="field-row">
+            <span>Reminder interval</span>
+            <input
+              type="number"
+              min="1"
+              max="240"
+              step="1"
+              value={props.settings?.intervalMinutes ?? 20}
+              disabled={!props.settings}
+              onChange={(event) =>
+                props.updateSettings({
+                  intervalMinutes: Math.max(1, Math.min(240, Number(event.currentTarget.value) || 20)),
+                })
+              }
+            />
+          </label>
+        </div>
+        <Show when={props.settingsError}>
+          <p class="error-text">{props.settingsError}</p>
+        </Show>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <span>Status</span>
+          <strong>{nextDueText()}</strong>
+        </div>
+        <dl class="fact-list">
+          <div>
+            <dt>Rest duration</dt>
+            <dd>20 seconds</dd>
+          </div>
+          <div>
+            <dt>Sound</dt>
+            <dd>Uses the selected notification sound setting.</dd>
+          </div>
+          <div>
+            <dt>Overlay</dt>
+            <dd>Dedicated bottom-right window until resumed.</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
   );
 }
 
@@ -942,6 +1050,76 @@ function ToastOverlay() {
         }}
       />
     </div>
+  );
+}
+
+function EyeRestOverlay() {
+  const [status, setStatus] = createSignal<EyeRestStatus>();
+  const [error, setError] = createSignal<string>();
+
+  onMount(() => {
+    void refresh();
+    const poll = window.setInterval(refresh, 500);
+    let unlistenStarted: (() => void) | undefined;
+    void listen<EyeRestStatus>("traybits://eye-rest-started", (event) => {
+      setStatus(event.payload);
+    }).then((unlisten) => {
+      unlistenStarted = unlisten;
+    });
+
+    onCleanup(() => {
+      window.clearInterval(poll);
+      unlistenStarted?.();
+    });
+  });
+
+  async function refresh() {
+    const latest = await invoke<EyeRestStatus>("get_eye_rest_status").catch((reason) => {
+      setError(String(reason));
+      return undefined;
+    });
+    if (latest) {
+      setStatus(latest);
+      setError(undefined);
+    }
+  }
+
+  const remainingSeconds = createMemo(() => {
+    const current = status();
+    if (!current?.restReadyAt) return 20;
+    return Math.max(0, Math.ceil((current.restReadyAt - current.now) / 1_000));
+  });
+
+  const canResume = createMemo(() => remainingSeconds() === 0);
+
+  async function resume() {
+    const latest = await invoke<EyeRestStatus>("complete_eye_rest").catch((reason) => {
+      setError(String(reason));
+      return undefined;
+    });
+    if (latest) setStatus(latest);
+  }
+
+  return (
+    <main class="eye-rest-stage">
+      <section class="eye-rest-card">
+        <div>
+          <span>Eye Rest Reminder</span>
+          <strong>Look away for 20 seconds</strong>
+        </div>
+        <p>Relax your eyes, blink slowly, and focus on something farther away.</p>
+        <div class="eye-rest-countdown">
+          <strong>{remainingSeconds()}</strong>
+          <span>seconds</span>
+        </div>
+        <button type="button" disabled={!canResume()} onClick={resume}>
+          Continue timer
+        </button>
+        <Show when={error()}>
+          {(message) => <small class="eye-rest-error">{message()}</small>}
+        </Show>
+      </section>
+    </main>
   );
 }
 

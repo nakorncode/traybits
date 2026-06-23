@@ -18,7 +18,9 @@
 }
 
 :root[data-view="toast"],
-:root[data-view="toast"] body {
+:root[data-view="toast"] body,
+:root[data-view="eye-rest"],
+:root[data-view="eye-rest"] body {
   background: transparent;
 }
 
@@ -545,6 +547,84 @@ button {
   border-color: #93c5fd;
   color: #1e40af;
   background: #bfdbfe;
+}
+
+.eye-rest-stage {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  place-items: stretch;
+  padding: 14px;
+  background: transparent;
+}
+
+.eye-rest-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  height: 100%;
+  padding: 18px;
+  border: 1px solid rgba(147, 197, 253, 0.72);
+  border-radius: 8px;
+  color: #172033;
+  background: rgba(239, 246, 255, 0.96);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+}
+
+.eye-rest-card span {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.eye-rest-card strong {
+  display: block;
+  color: #111827;
+  font-size: 18px;
+}
+
+.eye-rest-card p {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+}
+
+.eye-rest-countdown {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.eye-rest-countdown strong {
+  color: #1d4ed8;
+  font-size: 38px;
+  line-height: 1;
+}
+
+.eye-rest-countdown span {
+  color: #475569;
+  font-size: 13px;
+  text-transform: none;
+}
+
+.eye-rest-card button {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #2563eb;
+  font-weight: 700;
+}
+
+.eye-rest-card button:disabled {
+  cursor: default;
+  color: #64748b;
+  background: #dbeafe;
+}
+
+.eye-rest-error {
+  color: #b42318;
 }
 
 @media (max-width: 820px) {

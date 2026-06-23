@@ -32,6 +32,20 @@
         "skipTaskbar": true,
         "visible": false,
         "shadow": false
+      },
+      {
+        "label": "eye-rest",
+        "title": "TrayBits Eye Rest",
+        "url": "index.html?view=eye-rest",
+        "width": 380,
+        "height": 220,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": false
       }
     ],
     "security": {

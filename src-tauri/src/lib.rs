@@ -365,6 +365,8 @@ struct AppSettings {
     notification_overlay_monitor: String,
     #[serde(default = "default_notification_overlay_debug_visible")]
     notification_overlay_debug_visible: bool,
+    #[serde(default)]
+    eye_rest_reminder: EyeRestReminderSettings,
     caps_lock_language_switch: CapsLockLanguageSwitchSettings,
 }
 
@@ -396,6 +398,14 @@ struct CapsLockLanguageSwitchSettings {
     preserve_caps_lock_with: CapsLockFallbackHotkey,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct EyeRestReminderSettings {
+    enabled: bool,
+    #[serde(default = "default_eye_rest_interval_minutes")]
+    interval_minutes: u32,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum CapsLockFallbackHotkey {
@@ -409,6 +419,25 @@ struct AppState {
     notifications: Mutex<Vec<AppNotification>>,
     notification_capture_status: Mutex<NotificationCaptureStatus>,
     captured_windows_notification_keys: Mutex<HashSet<String>>,
+    eye_rest: Mutex<EyeRestState>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct EyeRestState {
+    next_due_at: u64,
+    active: bool,
+    rest_ready_at: Option<u64>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EyeRestStatus {
+    enabled: bool,
+    interval_minutes: u32,
+    active: bool,
+    next_due_at: u64,
+    rest_ready_at: Option<u64>,
+    now: u64,
 }
 
 fn default_notification_overlay_placement() -> OverlayPlacement {
@@ -439,6 +468,19 @@ fn default_notification_overlay_debug_visible() -> bool {
     false
 }
 
+fn default_eye_rest_interval_minutes() -> u32 {
+    20
+}
+
+impl Default for EyeRestReminderSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_minutes: default_eye_rest_interval_minutes(),
+        }
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -454,6 +496,7 @@ impl Default for AppSettings {
             notification_overlay_placement: default_notification_overlay_placement(),
             notification_overlay_monitor: default_notification_overlay_monitor(),
             notification_overlay_debug_visible: default_notification_overlay_debug_visible(),
+            eye_rest_reminder: EyeRestReminderSettings::default(),
             caps_lock_language_switch: CapsLockLanguageSwitchSettings {
                 enabled: false,
                 preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
@@ -503,7 +546,16 @@ fn update_app_settings(
     save_settings(&app, &settings)?;
     keyboard::apply_settings(&settings.caps_lock_language_switch);
 
-    *state.settings.lock().map_err(|error| error.to_string())? = settings.clone();
+    let previous_eye_rest_settings = {
+        let mut current_settings = state.settings.lock().map_err(|error| error.to_string())?;
+        let previous = current_settings.eye_rest_reminder.clone();
+        *current_settings = settings.clone();
+        previous
+    };
+    if previous_eye_rest_settings != settings.eye_rest_reminder {
+        sync_eye_rest_settings(state.inner(), &settings.eye_rest_reminder);
+        let _ = hide_eye_rest_overlay(app.clone());
+    }
     app.emit("traybits://settings-updated", settings.clone())
         .map_err(|error| error.to_string())?;
     sync_overlay_debug_visibility(&app, &settings);
@@ -539,6 +591,33 @@ fn get_notification_capture_status(
         .lock()
         .map(|status| status.clone())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_eye_rest_status(state: State<'_, AppState>) -> Result<EyeRestStatus, String> {
+    eye_rest_status(state.inner())
+}
+
+#[tauri::command]
+fn complete_eye_rest(app: AppHandle, state: State<'_, AppState>) -> Result<EyeRestStatus, String> {
+    let settings = state
+        .settings
+        .lock()
+        .map(|settings| settings.clone())
+        .map_err(|error| error.to_string())?;
+    let now = monotonic_millis();
+    {
+        let mut eye_rest = state.eye_rest.lock().map_err(|error| error.to_string())?;
+        eye_rest.active = false;
+        eye_rest.rest_ready_at = None;
+        eye_rest.next_due_at = if settings.eye_rest_reminder.enabled {
+            now + eye_rest_interval_millis(&settings.eye_rest_reminder)
+        } else {
+            0
+        };
+    }
+    hide_eye_rest_overlay(app)?;
+    eye_rest_status(state.inner())
 }
 
 #[tauri::command]
@@ -813,6 +892,14 @@ fn hide_toast_overlay(app: AppHandle) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
 }
 
+fn hide_eye_rest_overlay(app: AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("eye-rest") else {
+        return Ok(());
+    };
+
+    window.hide().map_err(|error| error.to_string())
+}
+
 fn normalize_settings(mut settings: AppSettings) -> AppSettings {
     if !settings.enable_tray_icon && settings.close_behavior == CloseBehavior::MinimizeToTray {
         settings.close_behavior = CloseBehavior::Exit;
@@ -820,6 +907,8 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
     if notification_sound_preset(settings.notification_sound_preset.as_str()).is_none() {
         settings.notification_sound_preset = default_notification_sound_preset();
     }
+    settings.eye_rest_reminder.interval_minutes =
+        settings.eye_rest_reminder.interval_minutes.clamp(1, 240);
     settings
 }
 
@@ -859,6 +948,21 @@ fn apply_runtime_settings(app: &AppHandle, settings: &AppSettings) -> Result<(),
     priority::set_high_priority(settings.run_high_priority)?;
     sync_tray_icon(app, settings.enable_tray_icon)?;
     Ok(())
+}
+
+fn sync_eye_rest_settings(state: &AppState, settings: &EyeRestReminderSettings) {
+    let now = monotonic_millis();
+    if let Ok(mut eye_rest) = state.eye_rest.lock() {
+        if settings.enabled {
+            eye_rest.active = false;
+            eye_rest.rest_ready_at = None;
+            eye_rest.next_due_at = now + eye_rest_interval_millis(settings);
+        } else {
+            eye_rest.next_due_at = 0;
+            eye_rest.active = false;
+            eye_rest.rest_ready_at = None;
+        }
+    }
 }
 
 fn sync_overlay_debug_visibility(app: &AppHandle, settings: &AppSettings) {
@@ -956,6 +1060,59 @@ fn default_notification_sound_file() -> &'static str {
     notification_sound_preset(DEFAULT_NOTIFICATION_SOUND_PRESET)
         .map(|preset| preset.file)
         .unwrap_or("aosp-argon.wav")
+}
+
+fn eye_rest_interval_millis(settings: &EyeRestReminderSettings) -> u64 {
+    settings.interval_minutes.clamp(1, 240) as u64 * 60_000
+}
+
+fn eye_rest_status(state: &AppState) -> Result<EyeRestStatus, String> {
+    let settings = state
+        .settings
+        .lock()
+        .map(|settings| settings.eye_rest_reminder.clone())
+        .map_err(|error| error.to_string())?;
+    let eye_rest = state.eye_rest.lock().map_err(|error| error.to_string())?;
+    Ok(EyeRestStatus {
+        enabled: settings.enabled,
+        interval_minutes: settings.interval_minutes,
+        active: eye_rest.active,
+        next_due_at: eye_rest.next_due_at,
+        rest_ready_at: eye_rest.rest_ready_at,
+        now: monotonic_millis(),
+    })
+}
+
+fn show_eye_rest_window(app: &AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("eye-rest") else {
+        return Err("eye-rest window is not configured".into());
+    };
+
+    let monitor = app
+        .primary_monitor()
+        .map_err(|error| error.to_string())?
+        .or_else(|| window.current_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
+        let work_area = monitor.work_area();
+        let scale = monitor.scale_factor();
+        let logical_width = 380.0 * scale;
+        let logical_height = 220.0 * scale;
+        let margin = 24.0 * scale;
+        let x = work_area.position.x as f64 + work_area.size.width as f64 - logical_width - margin;
+        let y =
+            work_area.position.y as f64 + work_area.size.height as f64 - logical_height - margin;
+        let _ = window.set_size(PhysicalSize::new(
+            logical_width.round() as u32,
+            logical_height.round() as u32,
+        ));
+        let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
+    }
+
+    window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    refresh_overlay_topmost(&window)
 }
 
 fn show_toast_window(app: &AppHandle) -> Result<(), String> {
@@ -1331,6 +1488,75 @@ fn set_notification_capture_status(
             message: message.into(),
             mode: mode.into(),
         };
+    }
+}
+
+mod eye_rest_timer {
+    use super::{
+        eye_rest_interval_millis, eye_rest_status, monotonic_millis, notification_sound,
+        show_eye_rest_window, AppHandle, AppState,
+    };
+    use std::{thread, time::Duration};
+    use tauri::{Emitter, Manager};
+
+    const REST_SECONDS: u64 = 20;
+
+    pub fn start(app: AppHandle) {
+        thread::spawn(move || run_timer_loop(app));
+    }
+
+    fn run_timer_loop(app: AppHandle) {
+        loop {
+            let state = app.state::<AppState>();
+            let trigger = {
+                let settings = state
+                    .settings
+                    .lock()
+                    .map(|settings| settings.clone())
+                    .unwrap_or_default();
+                let now = monotonic_millis();
+                let mut should_trigger = false;
+
+                if let Ok(mut eye_rest) = state.eye_rest.lock() {
+                    if settings.eye_rest_reminder.enabled {
+                        if eye_rest.next_due_at == 0 {
+                            eye_rest.next_due_at =
+                                now + eye_rest_interval_millis(&settings.eye_rest_reminder);
+                        }
+                        if !eye_rest.active && now >= eye_rest.next_due_at {
+                            eye_rest.active = true;
+                            eye_rest.rest_ready_at = Some(now + REST_SECONDS * 1_000);
+                            should_trigger = true;
+                        }
+                    } else {
+                        eye_rest.next_due_at = 0;
+                        eye_rest.active = false;
+                        eye_rest.rest_ready_at = None;
+                    }
+                }
+
+                if should_trigger {
+                    Some((
+                        settings.notification_sound_enabled,
+                        settings.notification_sound_preset,
+                    ))
+                } else {
+                    None
+                }
+            };
+
+            if let Some((sound_enabled, sound_preset)) = trigger {
+                let _ = show_eye_rest_window(&app);
+                if sound_enabled {
+                    let _ = notification_sound::play(&app, sound_preset.as_str());
+                }
+                if let Ok(status) = eye_rest_status(state.inner()) {
+                    let _ = app.emit_to("eye-rest", "traybits://eye-rest-started", status);
+                }
+            }
+
+            thread::sleep(Duration::from_millis(1_000));
+        }
     }
 }
 
@@ -1829,18 +2055,24 @@ pub fn run() {
                 notifications: Mutex::new(Vec::new()),
                 notification_capture_status: Mutex::new(NotificationCaptureStatus::default()),
                 captured_windows_notification_keys: Mutex::new(HashSet::new()),
+                eye_rest: Mutex::new(EyeRestState::default()),
             });
             apply_runtime_settings(app.handle(), &settings)?;
             keyboard::apply_settings(&settings.caps_lock_language_switch);
+            let state = app.state::<AppState>();
+            sync_eye_rest_settings(state.inner(), &settings.eye_rest_reminder);
             sync_overlay_debug_visibility(app.handle(), &settings);
             notification_capture::start(app.handle().clone());
+            eye_rest_timer::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(handle_window_event)
         .invoke_handler(tauri::generate_handler![
             clear_notifications,
+            complete_eye_rest,
             dismiss_notification,
             get_app_settings,
+            get_eye_rest_status,
             get_notification_capture_status,
             get_notification_overlay_monitors,
             get_notification_sound_presets,
