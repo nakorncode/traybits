@@ -4,6 +4,7 @@ import {
   For,
   Show,
   createContext,
+  createEffect,
   createMemo,
   createSignal,
   onCleanup,
@@ -983,11 +984,15 @@ function ToastOverlay() {
   const [lastPollError, setLastPollError] = createSignal<string>();
   const announcedIds = new Set<string>();
   const activeSonnerIds = new Set<string>();
+  let stageRef: HTMLDivElement | undefined;
+  let lastMeasuredOverlayHeight = 0;
 
   onMount(() => {
     void syncOverlayState();
     const poll = window.setInterval(syncOverlayState, 750);
     let unlistenAdded: (() => void) | undefined;
+    const resizeObserver = new ResizeObserver(() => requestOverlayResize());
+    const mutationObserver = new MutationObserver(() => requestOverlayResize());
 
     void listen<AppNotification>("traybits://notification-added", (event) => {
       if (event.payload.silent) return;
@@ -997,10 +1002,23 @@ function ToastOverlay() {
       unlistenAdded = unlisten;
     });
 
+    if (stageRef) {
+      resizeObserver.observe(stageRef);
+      mutationObserver.observe(stageRef, { childList: true, subtree: true, attributes: true });
+    }
+
     onCleanup(() => {
       window.clearInterval(poll);
       unlistenAdded?.();
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
     });
+  });
+
+  createEffect(() => {
+    toasts();
+    settings();
+    requestOverlayResize();
   });
 
   async function syncOverlayState() {
@@ -1055,9 +1073,11 @@ function ToastOverlay() {
       onDismiss: () => {
         activeSonnerIds.delete(notification.id);
         void invoke("dismiss_notification", { id: notification.id });
+        requestOverlayResize();
         scheduleOverlayHide();
       },
     });
+    requestOverlayResize();
   }
 
   async function openNotificationSource(id: string) {
@@ -1065,7 +1085,27 @@ function ToastOverlay() {
     activeSonnerIds.delete(id);
     toast.dismiss(id);
     await invoke("dismiss_notification", { id }).catch(() => undefined);
+    requestOverlayResize();
     scheduleOverlayHide();
+  }
+
+  function requestOverlayResize() {
+    window.requestAnimationFrame(() => {
+      window.setTimeout(measureAndResizeOverlay, 80);
+    });
+  }
+
+  function measureAndResizeOverlay() {
+    if (!stageRef) return;
+    const contentBottom = Array.from(stageRef.children).reduce((bottom, child) => {
+      const element = child as HTMLElement;
+      return Math.max(bottom, element.offsetTop + element.scrollHeight);
+    }, 0);
+    const contentHeight = Math.ceil(contentBottom + 18);
+    if (!Number.isFinite(contentHeight) || contentHeight <= 0) return;
+    if (Math.abs(contentHeight - lastMeasuredOverlayHeight) < 8) return;
+    lastMeasuredOverlayHeight = contentHeight;
+    invoke("resize_toast_overlay_for_content", { contentHeight }).catch(() => undefined);
   }
 
   function scheduleOverlayHide() {
@@ -1078,7 +1118,10 @@ function ToastOverlay() {
 
   return (
     <div
+      ref={stageRef}
       class="toast-stage"
+      onMouseEnter={requestOverlayResize}
+      onMouseLeave={requestOverlayResize}
       classList={{ "debug-overlay": settings()?.notificationOverlayDebugVisible ?? true }}
     >
       <Show when={settings()?.notificationOverlayDebugVisible ?? true}>

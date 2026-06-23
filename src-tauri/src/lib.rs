@@ -992,6 +992,11 @@ fn hide_toast_overlay(app: AppHandle) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn resize_toast_overlay_for_content(app: AppHandle, content_height: f64) -> Result<(), String> {
+    resize_toast_overlay(&app, content_height)
+}
+
 fn hide_eye_rest_overlay(app: AppHandle) -> Result<(), String> {
     let Some(window) = app.get_webview_window("eye-rest") else {
         return Ok(());
@@ -1262,8 +1267,8 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         } else {
             220.0 * scale
         };
-        let margin = 24.0 * scale;
-        let (x, y) = overlay_position(
+        set_toast_overlay_bounds(
+            &window,
             settings.notification_overlay_placement,
             work_area.position.x as f64,
             work_area.position.y as f64,
@@ -1271,13 +1276,8 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
             work_area.size.height as f64,
             logical_width,
             logical_height,
-            margin,
+            24.0 * scale,
         );
-        let _ = window.set_size(PhysicalSize::new(
-            logical_width.round() as u32,
-            logical_height.round() as u32,
-        ));
-        let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
     }
 
     window
@@ -1286,6 +1286,73 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
     let _ = window.set_ignore_cursor_events(false);
     window.show().map_err(|error| error.to_string())?;
     refresh_overlay_topmost(&window)
+}
+
+fn resize_toast_overlay(app: &AppHandle, content_height: f64) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("toast") else {
+        return Ok(());
+    };
+    let Some(monitor) = selected_overlay_monitor(app, &window) else {
+        return Ok(());
+    };
+
+    let settings = app
+        .try_state::<AppState>()
+        .and_then(|state| state.settings.lock().ok().map(|settings| settings.clone()))
+        .unwrap_or_default();
+    let work_area = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let margin = 24.0 * scale;
+    let logical_width = 440.0 * scale;
+    let min_height = if settings.notification_overlay_debug_visible {
+        520.0 * scale
+    } else {
+        220.0 * scale
+    };
+    let max_height = (work_area.size.height as f64 - margin * 2.0).max(min_height);
+    let requested_height = (content_height * scale).ceil() + margin;
+    let logical_height = requested_height.clamp(min_height, max_height);
+
+    set_toast_overlay_bounds(
+        &window,
+        settings.notification_overlay_placement,
+        work_area.position.x as f64,
+        work_area.position.y as f64,
+        work_area.size.width as f64,
+        work_area.size.height as f64,
+        logical_width,
+        logical_height,
+        margin,
+    );
+    refresh_overlay_topmost(&window)
+}
+
+fn set_toast_overlay_bounds(
+    window: &tauri::WebviewWindow,
+    placement: OverlayPlacement,
+    screen_x: f64,
+    screen_y: f64,
+    screen_width: f64,
+    screen_height: f64,
+    logical_width: f64,
+    logical_height: f64,
+    margin: f64,
+) {
+    let (x, y) = overlay_position(
+        placement,
+        screen_x,
+        screen_y,
+        screen_width,
+        screen_height,
+        logical_width,
+        logical_height,
+        margin,
+    );
+    let _ = window.set_size(PhysicalSize::new(
+        logical_width.round() as u32,
+        logical_height.round() as u32,
+    ));
+    let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
 }
 
 #[cfg(windows)]
@@ -2234,6 +2301,7 @@ pub fn run() {
             preview_notification_sound,
             push_demo_notification,
             push_demo_toast,
+            resize_toast_overlay_for_content,
             skip_eye_rest_timer,
             start_eye_rest_break,
             start_eye_rest_timer,

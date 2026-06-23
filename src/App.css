@@ -505,6 +505,7 @@ button {
   flex-direction: column;
   justify-content: flex-end;
   gap: 10px;
+  overflow: hidden auto;
   padding: 18px;
   background: transparent;
   pointer-events: none;
