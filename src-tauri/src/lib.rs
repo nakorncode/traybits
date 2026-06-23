@@ -366,6 +366,8 @@ struct AppSettings {
     notification_overlay_monitor: String,
     #[serde(default = "default_notification_overlay_debug_visible")]
     notification_overlay_debug_visible: bool,
+    #[serde(default = "default_notification_overlay_bounds_visible")]
+    notification_overlay_bounds_visible: bool,
     #[serde(default)]
     eye_rest_reminder: EyeRestReminderSettings,
     caps_lock_language_switch: CapsLockLanguageSwitchSettings,
@@ -483,6 +485,10 @@ fn default_notification_overlay_debug_visible() -> bool {
     false
 }
 
+fn default_notification_overlay_bounds_visible() -> bool {
+    false
+}
+
 fn default_eye_rest_interval_minutes() -> u32 {
     20
 }
@@ -511,6 +517,7 @@ impl Default for AppSettings {
             notification_overlay_placement: default_notification_overlay_placement(),
             notification_overlay_monitor: default_notification_overlay_monitor(),
             notification_overlay_debug_visible: default_notification_overlay_debug_visible(),
+            notification_overlay_bounds_visible: default_notification_overlay_bounds_visible(),
             eye_rest_reminder: EyeRestReminderSettings::default(),
             caps_lock_language_switch: CapsLockLanguageSwitchSettings {
                 enabled: false,

@@ -100,6 +100,7 @@ type AppSettings = {
   notificationOverlayPlacement: OverlayPlacement;
   notificationOverlayMonitor: string;
   notificationOverlayDebugVisible: boolean;
+  notificationOverlayBoundsVisible: boolean;
   eyeRestReminder: {
     enabled: boolean;
     intervalMinutes: number;
@@ -636,6 +637,17 @@ function PersistentNotificationsPanel(props: {
           />
           Show overlay debug background
         </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.notificationOverlayBoundsVisible ?? false}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ notificationOverlayBoundsVisible: event.currentTarget.checked })
+            }
+          />
+          Show toast overlay bounds
+        </label>
         <Show when={props.settingsError}>
           <p class="error-text">{props.settingsError}</p>
         </Show>
@@ -1135,7 +1147,10 @@ function ToastOverlay() {
       class="toast-stage"
       onMouseEnter={requestOverlayResize}
       onMouseLeave={requestOverlayResize}
-      classList={{ "debug-overlay": settings()?.notificationOverlayDebugVisible ?? true }}
+      classList={{
+        "debug-overlay": settings()?.notificationOverlayDebugVisible ?? true,
+        "bounds-overlay": settings()?.notificationOverlayBoundsVisible ?? false,
+      }}
     >
       <Show when={settings()?.notificationOverlayDebugVisible ?? true}>
         <div class="overlay-debug-card">
