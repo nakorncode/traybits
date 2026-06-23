@@ -20,6 +20,9 @@ It includes:
 - A transparent, frameless, always-on-top toast overlay window.
 - Rust commands that emit demo toast events into the SolidJS overlay.
 - A tray icon menu for opening the app and triggering a demo toast.
+- Persisted settings for startup, process priority, close behavior, and tray
+  icon visibility.
+- A Windows Caps Lock hook that can switch to the next installed input language.
 - A Windows notification listener status panel that documents the native spike
   needed for real notification capture.
 
@@ -58,8 +61,9 @@ Tauri bridge
 
 Rust Windows core
   - future notification listener
-  - future Caps Lock hook and input-language switching
+  - Caps Lock hook and input-language switching
   - future 20-20-20 scheduler
+  - persisted app settings
 ```
 
 Real Windows notification capture should use
@@ -79,14 +83,15 @@ capability, and explicit user permission.
 
 ## Repository Status
 
-This repository is an early prototype. The UI shell and demo overlay compile,
-but real Windows notification capture and Caps Lock switching are not
-implemented yet.
+This repository is an early prototype. The UI shell, demo overlay, persisted
+settings, and Caps Lock language-switch hook compile. Real Windows notification
+capture is not implemented yet.
 
 Expected next steps:
 
 1. Prove real `UserNotificationListener` access from a packaged Tauri app.
-2. Prototype Caps Lock interception and language switching in Rust.
+2. Exercise the Caps Lock language-switch hook on a multi-language Windows
+   machine and tighten edge cases.
 3. Port the 20-20-20 reminder timer into the Rust core.
 4. Decide whether the standalone notification and Caps Lock tools are ported
    into this repo or kept as reference implementations.

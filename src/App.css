@@ -29,7 +29,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -301,7 +302,9 @@ button {
   gap: 14px;
 }
 
-.settings-list label {
+.settings-list label,
+.toggle-row,
+.field-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -312,6 +315,44 @@ button {
 .settings-list input {
   width: 16px;
   height: 16px;
+}
+
+.field-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-row span {
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-row select {
+  min-width: 230px;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #cfd4df;
+  border-radius: 6px;
+  color: #1f2937;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.hint-text,
+.error-text {
+  max-width: 620px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.hint-text {
+  color: #667085;
+}
+
+.error-text {
+  color: #b42318;
 }
 
 .toast-stage {

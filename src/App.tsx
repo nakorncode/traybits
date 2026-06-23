@@ -22,6 +22,20 @@ type NotificationListenerStatus = {
   prototypeStep: string;
 };
 
+type CloseBehavior = "minimizeToTray" | "exit";
+type CapsLockFallbackHotkey = "ctrlCaps" | "shiftCaps" | "altCaps";
+
+type AppSettings = {
+  runOnStartup: boolean;
+  runHighPriority: boolean;
+  closeBehavior: CloseBehavior;
+  enableTrayIcon: boolean;
+  capsLockLanguageSwitch: {
+    enabled: boolean;
+    preserveCapsLockWith: CapsLockFallbackHotkey;
+  };
+};
+
 const tools: Array<{
   id: ToolId;
   name: string;
@@ -73,15 +87,46 @@ function App() {
 function MainApp() {
   const [activeTool, setActiveTool] = createSignal<ToolId>("persistent-notifications");
   const [listenerStatus, setListenerStatus] = createSignal<NotificationListenerStatus>();
+  const [settings, setSettings] = createSignal<AppSettings>();
+  const [settingsError, setSettingsError] = createSignal<string>();
 
   onMount(async () => {
     setListenerStatus(await invoke<NotificationListenerStatus>("notification_listener_status"));
+    setSettings(await invoke<AppSettings>("get_app_settings"));
   });
 
   const active = createMemo(() => tools.find((tool) => tool.id === activeTool()) ?? tools[0]);
 
   async function pushToast(tone: string) {
     await invoke("push_demo_toast", { tone });
+  }
+
+  async function saveSettings(next: AppSettings) {
+    setSettingsError(undefined);
+    try {
+      const saved = await invoke<AppSettings>("update_app_settings", { settings: next });
+      setSettings(saved);
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function updateSettings(patch: Partial<AppSettings>) {
+    const current = settings();
+    if (!current) return;
+    void saveSettings({ ...current, ...patch });
+  }
+
+  function updateCapsLockSettings(patch: Partial<AppSettings["capsLockLanguageSwitch"]>) {
+    const current = settings();
+    if (!current) return;
+    void saveSettings({
+      ...current,
+      capsLockLanguageSwitch: {
+        ...current.capsLockLanguageSwitch,
+        ...patch,
+      },
+    });
   }
 
   return (
@@ -132,10 +177,19 @@ function MainApp() {
           <EyeRestPanel pushToast={pushToast} />
         </Show>
         <Show when={activeTool() === "caps-lock-language-switch"}>
-          <CapsLockLanguageSwitchPanel pushToast={pushToast} />
+          <CapsLockLanguageSwitchPanel
+            pushToast={pushToast}
+            settings={settings()?.capsLockLanguageSwitch}
+            updateSettings={updateCapsLockSettings}
+            settingsError={settingsError()}
+          />
         </Show>
         <Show when={activeTool() === "settings"}>
-          <SettingsPanel />
+          <SettingsPanel
+            settings={settings()}
+            updateSettings={updateSettings}
+            settingsError={settingsError()}
+          />
         </Show>
       </section>
     </main>
@@ -226,45 +280,146 @@ function EyeRestPanel(props: { pushToast: (tone: string) => Promise<void> }) {
   );
 }
 
-function CapsLockLanguageSwitchPanel(props: { pushToast: (tone: string) => Promise<void> }) {
+function CapsLockLanguageSwitchPanel(props: {
+  pushToast: (tone: string) => Promise<void>;
+  settings?: AppSettings["capsLockLanguageSwitch"];
+  updateSettings: (patch: Partial<AppSettings["capsLockLanguageSwitch"]>) => void;
+  settingsError?: string;
+}) {
   return (
-    <section class="panel primary-panel">
-      <div class="section-title">
-        <span>Keyboard spike</span>
-        <strong>Caps Lock to input-language switch</strong>
-      </div>
-      <p>
-        Rust should own the low-level keyboard hook and input-language API calls. The UI only shows
-        status, settings, and event feedback.
-      </p>
-      <button type="button" onClick={() => props.pushToast("language-switch")}>
-        Preview language switch toast
-      </button>
-    </section>
+    <div class="content-grid">
+      <section class="panel primary-panel">
+        <div class="section-title">
+          <span>Keyboard hook</span>
+          <strong>Caps Lock to input-language switch</strong>
+        </div>
+        <p>
+          When enabled, Caps Lock alone is intercepted by Rust, switches to the next Windows input
+          language, and does not toggle Caps Lock state.
+        </p>
+        <div class="settings-list">
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={props.settings?.enabled ?? false}
+              disabled={!props.settings}
+              onChange={(event) => props.updateSettings({ enabled: event.currentTarget.checked })}
+            />
+            Enable Caps Lock Language Switch
+          </label>
+          <label class="field-row">
+            <span>Original Caps Lock behavior</span>
+            <select
+              value={props.settings?.preserveCapsLockWith ?? "ctrlCaps"}
+              disabled={!props.settings}
+              onChange={(event) =>
+                props.updateSettings({
+                  preserveCapsLockWith: event.currentTarget.value as CapsLockFallbackHotkey,
+                })
+              }
+            >
+              <option value="ctrlCaps">Ctrl + Caps Lock</option>
+              <option value="shiftCaps">Shift + Caps Lock</option>
+              <option value="altCaps">Alt + Caps Lock</option>
+            </select>
+          </label>
+        </div>
+        <Show when={props.settingsError}>
+          <p class="error-text">{props.settingsError}</p>
+        </Show>
+        <button type="button" onClick={() => props.pushToast("language-switch")}>
+          Preview language switch toast
+        </button>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <span>Behavior</span>
+          <strong>Fixed shortcuts for now</strong>
+        </div>
+        <dl class="fact-list">
+          <div>
+            <dt>Caps Lock</dt>
+            <dd>Switches to the next installed Windows input language.</dd>
+          </div>
+          <div>
+            <dt>Caps Lock state</dt>
+            <dd>Blocked for Caps Lock alone so accidental uppercase mode is disabled.</dd>
+          </div>
+          <div>
+            <dt>Fallback shortcut</dt>
+            <dd>The selected modifier combo passes through to Windows for normal Caps Lock.</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
   );
 }
 
-function SettingsPanel() {
+function SettingsPanel(props: {
+  settings?: AppSettings;
+  updateSettings: (patch: Partial<AppSettings>) => void;
+  settingsError?: string;
+}) {
   return (
     <section class="panel primary-panel">
       <div class="section-title">
         <span>Suite settings</span>
-        <strong>Shared behavior later</strong>
+        <strong>Shared desktop behavior</strong>
       </div>
       <div class="settings-list">
-        <label>
-          <input type="checkbox" checked readOnly />
-          Start TrayBits in the system tray
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.runOnStartup ?? false}
+            disabled={!props.settings}
+            onChange={(event) => props.updateSettings({ runOnStartup: event.currentTarget.checked })}
+          />
+          Run on startup
         </label>
-        <label>
-          <input type="checkbox" checked readOnly />
-          Use always-on-top toast overlay
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.runHighPriority ?? false}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ runHighPriority: event.currentTarget.checked })
+            }
+          />
+          Run high priority
         </label>
-        <label>
-          <input type="checkbox" readOnly />
-          Capture real Windows notifications
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.enableTrayIcon ?? false}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ enableTrayIcon: event.currentTarget.checked })
+            }
+          />
+          Enable tray icon
+        </label>
+        <label class="field-row">
+          <span>When closing the window</span>
+          <select
+            value={props.settings?.closeBehavior ?? "minimizeToTray"}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ closeBehavior: event.currentTarget.value as CloseBehavior })
+            }
+          >
+            <option value="minimizeToTray">Minimize to tray</option>
+            <option value="exit">Exit program</option>
+          </select>
         </label>
       </div>
+      <p class="hint-text">
+        If the tray icon is disabled, closing the window exits the app so it cannot disappear in the
+        background.
+      </p>
+      <Show when={props.settingsError}>
+        <p class="error-text">{props.settingsError}</p>
+      </Show>
     </section>
   );
 }
