@@ -81,6 +81,7 @@ type AppSettings = {
   runHighPriority: boolean;
   closeBehavior: CloseBehavior;
   enableTrayIcon: boolean;
+  nativeNotificationEnabled: boolean;
   notificationSoundEnabled: boolean;
   notificationSoundPreset: string;
   notificationOverlayPlacement: OverlayPlacement;
@@ -529,6 +530,17 @@ function PersistentNotificationsPanel(props: {
               )}
             </For>
           </select>
+        </label>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={props.settings?.nativeNotificationEnabled ?? true}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ nativeNotificationEnabled: event.currentTarget.checked })
+            }
+          />
+          Show native Windows notifications from TrayBits
         </label>
         <label class="toggle-row">
           <input

@@ -351,6 +351,8 @@ struct AppSettings {
     run_high_priority: bool,
     close_behavior: CloseBehavior,
     enable_tray_icon: bool,
+    #[serde(default = "default_native_notification_enabled")]
+    native_notification_enabled: bool,
     #[serde(default = "default_notification_sound_enabled")]
     notification_sound_enabled: bool,
     #[serde(default = "default_notification_sound_preset")]
@@ -419,6 +421,10 @@ fn default_notification_sound_enabled() -> bool {
     true
 }
 
+fn default_native_notification_enabled() -> bool {
+    true
+}
+
 fn default_notification_sound_preset() -> String {
     DEFAULT_NOTIFICATION_SOUND_PRESET.into()
 }
@@ -434,6 +440,7 @@ impl Default for AppSettings {
             run_high_priority: false,
             close_behavior: CloseBehavior::MinimizeToTray,
             enable_tray_icon: true,
+            native_notification_enabled: default_native_notification_enabled(),
             notification_sound_enabled: default_notification_sound_enabled(),
             notification_sound_preset: default_notification_sound_preset(),
             notification_overlay_placement: default_notification_overlay_placement(),
@@ -589,7 +596,7 @@ fn push_demo_notification(
         silent: false,
     };
 
-    let native_notification =
+    let native_notification = if settings.native_notification_enabled {
         match show_native_notification(&app, &notification, settings.notification_sound_enabled) {
             Ok(()) => NotificationDeliveryStatus {
                 ok: true,
@@ -599,7 +606,13 @@ fn push_demo_notification(
                 ok: false,
                 message: error,
             },
-        };
+        }
+    } else {
+        NotificationDeliveryStatus {
+            ok: true,
+            message: "Native Windows notification skipped by TrayBits setting.".into(),
+        }
+    };
     mark_notification_seen(state.inner(), &notification);
     let overlay = add_notification(
         &app,
