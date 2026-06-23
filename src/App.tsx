@@ -1035,6 +1035,7 @@ function ToastOverlay() {
 
       for (const notification of visible) {
         showOverlaySonner(notification);
+        markOverlaySonnerInteractivity(notification);
       }
 
       for (const id of Array.from(activeSonnerIds)) {
@@ -1062,14 +1063,6 @@ function ToastOverlay() {
       description: `${notification.source}: ${notification.body}`,
       duration: Number.POSITIVE_INFINITY,
       closeButton: true,
-      action: notification.sourceAppUserModelId
-        ? {
-            label: "Open",
-            onClick: () => {
-              void openNotificationSource(notification.id);
-            },
-          }
-        : undefined,
       onDismiss: () => {
         activeSonnerIds.delete(notification.id);
         void invoke("dismiss_notification", { id: notification.id });
@@ -1077,7 +1070,27 @@ function ToastOverlay() {
         scheduleOverlayHide();
       },
     });
+    markOverlaySonnerInteractivity(notification);
     requestOverlayResize();
+  }
+
+  function markOverlaySonnerInteractivity(notification: AppNotification) {
+    window.requestAnimationFrame(() => {
+      const element = document.querySelector<HTMLElement>(
+        `[data-sonner-toast][data-id="${CSS.escape(notification.id)}"]`,
+      );
+      if (!element) return;
+      element.dataset.traybitsClickable = notification.sourceAppUserModelId ? "true" : "false";
+      if (!notification.sourceAppUserModelId || element.dataset.traybitsOpenBound === "true") {
+        return;
+      }
+      element.dataset.traybitsOpenBound = "true";
+      element.addEventListener("click", (event) => {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("button")) return;
+        void openNotificationSource(notification.id);
+      });
+    });
   }
 
   async function openNotificationSource(id: string) {

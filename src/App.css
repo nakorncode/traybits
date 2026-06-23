@@ -556,17 +556,12 @@ button {
   -webkit-line-clamp: 4;
 }
 
-.toast-stage [data-sonner-toast] [data-button] {
-  border: 1px solid #bfdbfe;
-  color: #1d4ed8;
-  background: #dbeafe;
-  font-weight: 650;
+.toast-stage [data-sonner-toast][data-traybits-clickable="true"] {
+  cursor: pointer;
 }
 
-.toast-stage [data-sonner-toast] [data-button]:hover {
+.toast-stage [data-sonner-toast][data-traybits-clickable="true"]:hover {
   border-color: #93c5fd;
-  color: #1e40af;
-  background: #bfdbfe;
 }
 
 .eye-rest-stage {
