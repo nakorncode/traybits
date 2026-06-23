@@ -973,9 +973,38 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
     }
 
-    let _ = window.set_always_on_top(true);
+    window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
     let _ = window.set_ignore_cursor_events(false);
-    window.show().map_err(|error| error.to_string())
+    window.show().map_err(|error| error.to_string())?;
+    refresh_overlay_topmost(&window)
+}
+
+#[cfg(windows)]
+fn refresh_overlay_topmost(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        )
+    }
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(not(windows))]
+fn refresh_overlay_topmost(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
 }
 
 fn selected_overlay_monitor(app: &AppHandle, window: &tauri::WebviewWindow) -> Option<Monitor> {

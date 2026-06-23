@@ -5,6 +5,7 @@
   "windows": ["main", "toast"],
   "permissions": [
     "core:default",
+    "core:window:allow-set-always-on-top",
     "opener:default"
   ]
 }
