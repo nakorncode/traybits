@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -27,6 +27,35 @@ struct NotificationListenerStatus {
     permission_required: bool,
     packaging_risk: String,
     prototype_step: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppNotification {
+    id: String,
+    title: String,
+    body: String,
+    source: String,
+    source_app_user_model_id: Option<String>,
+    origin: NotificationOrigin,
+    created_at: String,
+    tone: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum NotificationOrigin {
+    Windows,
+    Demo,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NotificationCaptureStatus {
+    enabled: bool,
+    access: String,
+    message: String,
+    mode: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,6 +92,9 @@ enum CapsLockFallbackHotkey {
 
 struct AppState {
     settings: Mutex<AppSettings>,
+    notifications: Mutex<Vec<AppNotification>>,
+    notification_capture_status: Mutex<NotificationCaptureStatus>,
+    captured_windows_notification_ids: Mutex<HashSet<u32>>,
 }
 
 impl Default for AppSettings {
@@ -76,6 +108,17 @@ impl Default for AppSettings {
                 enabled: false,
                 preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
             },
+        }
+    }
+}
+
+impl Default for NotificationCaptureStatus {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            access: "notStarted".into(),
+            message: "Windows notification capture has not started yet.".into(),
+            mode: "none".into(),
         }
     }
 }
@@ -116,6 +159,67 @@ fn notification_listener_status() -> NotificationListenerStatus {
 }
 
 #[tauri::command]
+fn get_notifications(state: State<'_, AppState>) -> Result<Vec<AppNotification>, String> {
+    state
+        .notifications
+        .lock()
+        .map(|notifications| notifications.clone())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_notification_capture_status(
+    state: State<'_, AppState>,
+) -> Result<NotificationCaptureStatus, String> {
+    state
+        .notification_capture_status
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn push_demo_notification(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<AppNotification, String> {
+    let notification = AppNotification {
+        id: format!("demo-{}", monotonic_millis()),
+        title: "Demo notification".into(),
+        body: "TrayBits rendered this persistent notification through the shared store.".into(),
+        source: "TrayBits".into(),
+        source_app_user_model_id: None,
+        origin: NotificationOrigin::Demo,
+        created_at: now_timestamp(),
+        tone: "windows".into(),
+    };
+
+    add_notification(&app, state.inner(), notification.clone())?;
+    Ok(notification)
+}
+
+#[tauri::command]
+fn dismiss_notification(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    dismiss_notification_by_id(&app, state.inner(), &id)
+}
+
+#[tauri::command]
+fn clear_notifications(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .notifications
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clear();
+    app.emit("traybits://notifications-cleared", ())
+        .map_err(|error| error.to_string())?;
+    hide_toast_overlay(app)
+}
+
+#[tauri::command]
 fn push_demo_toast(app: AppHandle, tone: String) -> Result<(), String> {
     let payload = ToastPayload {
         id: monotonic_millis(),
@@ -143,6 +247,45 @@ fn push_demo_toast(app: AppHandle, tone: String) -> Result<(), String> {
     show_toast_window(&app)?;
     app.emit_to("toast", "traybits://toast", payload)
         .map_err(|error| error.to_string())
+}
+
+fn add_notification(
+    app: &AppHandle,
+    state: &AppState,
+    notification: AppNotification,
+) -> Result<(), String> {
+    {
+        let mut notifications = state
+            .notifications
+            .lock()
+            .map_err(|error| error.to_string())?;
+        notifications.insert(0, notification.clone());
+        notifications.truncate(100);
+    }
+
+    let _ = show_toast_window(app);
+    app.emit("traybits://notification-added", notification)
+        .map_err(|error| error.to_string())
+}
+
+fn dismiss_notification_by_id(app: &AppHandle, state: &AppState, id: &str) -> Result<(), String> {
+    let mut notifications = state
+        .notifications
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let previous_len = notifications.len();
+    notifications.retain(|notification| notification.id != id);
+
+    if notifications.len() != previous_len {
+        app.emit("traybits://notification-dismissed", id.to_string())
+            .map_err(|error| error.to_string())?;
+    }
+
+    if notifications.is_empty() {
+        let _ = hide_toast_overlay(app.clone());
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -292,6 +435,10 @@ fn monotonic_millis() -> u64 {
         .unwrap_or_default()
 }
 
+fn now_timestamp() -> String {
+    monotonic_millis().to_string()
+}
+
 fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
     let WindowEvent::CloseRequested { api, .. } = event else {
         return;
@@ -373,6 +520,273 @@ mod priority {
 mod priority {
     pub fn set_high_priority(_enabled: bool) -> Result<(), String> {
         Ok(())
+    }
+}
+
+fn set_notification_capture_status(
+    state: &AppState,
+    enabled: bool,
+    access: impl Into<String>,
+    message: impl Into<String>,
+    mode: impl Into<String>,
+) {
+    if let Ok(mut status) = state.notification_capture_status.lock() {
+        *status = NotificationCaptureStatus {
+            enabled,
+            access: access.into(),
+            message: message.into(),
+            mode: mode.into(),
+        };
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod notification_capture {
+    use super::{
+        add_notification, now_timestamp, set_notification_capture_status, AppHandle,
+        AppNotification, AppState, NotificationOrigin,
+    };
+    use std::{thread, time::Duration};
+    use tauri::Manager;
+    use windows::UI::Notifications::Management::{
+        UserNotificationListener, UserNotificationListenerAccessStatus,
+    };
+    use windows::UI::Notifications::{
+        KnownNotificationBindings, NotificationKinds, UserNotification,
+    };
+
+    pub fn start(app: AppHandle) {
+        thread::spawn(move || run_capture_loop(app));
+    }
+
+    fn run_capture_loop(app: AppHandle) {
+        let state = app.state::<AppState>();
+        let listener = match UserNotificationListener::Current() {
+            Ok(listener) => listener,
+            Err(error) => {
+                set_notification_capture_status(
+                    state.inner(),
+                    false,
+                    "unavailable",
+                    format!("Windows notification capture is unavailable: {error}"),
+                    "none",
+                );
+                return;
+            }
+        };
+
+        let mut access = match listener.GetAccessStatus() {
+            Ok(access) => access,
+            Err(error) => {
+                set_notification_capture_status(
+                    state.inner(),
+                    false,
+                    "error",
+                    format!("Could not read Windows notification access status: {error}"),
+                    "none",
+                );
+                return;
+            }
+        };
+
+        if access == UserNotificationListenerAccessStatus::Unspecified {
+            match listener
+                .RequestAccessAsync()
+                .and_then(|operation| operation.get())
+            {
+                Ok(requested_access) => access = requested_access,
+                Err(error) => {
+                    set_notification_capture_status(
+                        state.inner(),
+                        false,
+                        "error",
+                        format!("Windows notification access request failed: {error}"),
+                        "none",
+                    );
+                    return;
+                }
+            }
+        }
+
+        if access != UserNotificationListenerAccessStatus::Allowed {
+            set_notification_capture_status(
+                state.inner(),
+                false,
+                access_status_name(access),
+                "Windows notification capture is not allowed.",
+                "none",
+            );
+            return;
+        }
+
+        set_notification_capture_status(
+            state.inner(),
+            true,
+            "allowed",
+            "Windows notification capture is enabled.",
+            "polling",
+        );
+
+        loop {
+            capture_current_notifications(&app, state.inner(), &listener);
+            thread::sleep(Duration::from_millis(750));
+        }
+    }
+
+    fn capture_current_notifications(
+        app: &AppHandle,
+        state: &AppState,
+        listener: &UserNotificationListener,
+    ) {
+        let notifications = match listener
+            .GetNotificationsAsync(NotificationKinds::Toast)
+            .and_then(|operation| operation.get())
+        {
+            Ok(notifications) => notifications,
+            Err(error) => {
+                set_notification_capture_status(
+                    state,
+                    false,
+                    "error",
+                    format!("Windows notification polling failed: {error}"),
+                    "polling",
+                );
+                return;
+            }
+        };
+
+        let Ok(size) = notifications.Size() else {
+            return;
+        };
+
+        for index in 0..size {
+            let Ok(notification) = notifications.GetAt(index) else {
+                continue;
+            };
+            let Ok(notification_id) = notification.Id() else {
+                continue;
+            };
+
+            let already_seen = {
+                let Ok(mut captured_ids) = state.captured_windows_notification_ids.lock() else {
+                    continue;
+                };
+                !captured_ids.insert(notification_id)
+            };
+
+            if already_seen {
+                continue;
+            }
+
+            let Some(app_notification) = extract_notification(notification_id, &notification)
+            else {
+                continue;
+            };
+            let _ = add_notification(app, state, app_notification);
+        }
+    }
+
+    fn extract_notification(id: u32, notification: &UserNotification) -> Option<AppNotification> {
+        let texts = extract_texts(notification);
+        let (source, source_app_user_model_id) = extract_source(notification);
+        let title = texts
+            .first()
+            .cloned()
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_else(|| source.clone());
+        let body = if texts.len() > 1 {
+            texts[1..].join("\n")
+        } else {
+            format!("Windows notification ID {id}")
+        };
+
+        Some(AppNotification {
+            id: format!("windows-{id}"),
+            title,
+            body,
+            source,
+            source_app_user_model_id,
+            origin: NotificationOrigin::Windows,
+            created_at: now_timestamp(),
+            tone: "windows".into(),
+        })
+    }
+
+    fn extract_texts(notification: &UserNotification) -> Vec<String> {
+        let Ok(notification_payload) = notification.Notification() else {
+            return Vec::new();
+        };
+        let Ok(visual) = notification_payload.Visual() else {
+            return Vec::new();
+        };
+        let Ok(template) = KnownNotificationBindings::ToastGeneric() else {
+            return Vec::new();
+        };
+        let Ok(binding) = visual.GetBinding(&template) else {
+            return Vec::new();
+        };
+        let Ok(text_elements) = binding.GetTextElements() else {
+            return Vec::new();
+        };
+        let Ok(size) = text_elements.Size() else {
+            return Vec::new();
+        };
+
+        let mut texts = Vec::new();
+        for index in 0..size {
+            if let Ok(text_element) = text_elements.GetAt(index) {
+                if let Ok(text) = text_element.Text() {
+                    let text = text.to_string_lossy();
+                    if !text.trim().is_empty() {
+                        texts.push(text);
+                    }
+                }
+            }
+        }
+        texts
+    }
+
+    fn extract_source(notification: &UserNotification) -> (String, Option<String>) {
+        let Ok(app_info) = notification.AppInfo() else {
+            return ("Windows notification".into(), None);
+        };
+        let display_name = app_info
+            .DisplayInfo()
+            .and_then(|display_info| display_info.DisplayName())
+            .map(|name| name.to_string_lossy())
+            .unwrap_or_else(|_| "Windows notification".into());
+        let app_user_model_id = app_info
+            .AppUserModelId()
+            .map(|id| id.to_string_lossy())
+            .ok();
+
+        (display_name, app_user_model_id)
+    }
+
+    fn access_status_name(access: UserNotificationListenerAccessStatus) -> &'static str {
+        if access == UserNotificationListenerAccessStatus::Allowed {
+            "allowed"
+        } else if access == UserNotificationListenerAccessStatus::Denied {
+            "denied"
+        } else {
+            "unspecified"
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+mod notification_capture {
+    use super::{set_notification_capture_status, AppHandle, AppState};
+
+    pub fn start(app: AppHandle) {
+        let state = app.state::<AppState>();
+        set_notification_capture_status(
+            state.inner(),
+            false,
+            "unsupported",
+            "Windows notification capture is only available on Windows.",
+            "none",
+        );
     }
 }
 
@@ -593,16 +1007,25 @@ pub fn run() {
             let settings = load_settings(app.handle());
             app.manage(AppState {
                 settings: Mutex::new(settings.clone()),
+                notifications: Mutex::new(Vec::new()),
+                notification_capture_status: Mutex::new(NotificationCaptureStatus::default()),
+                captured_windows_notification_ids: Mutex::new(HashSet::new()),
             });
             apply_runtime_settings(app.handle(), &settings)?;
             keyboard::apply_settings(&settings.caps_lock_language_switch);
+            notification_capture::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(handle_window_event)
         .invoke_handler(tauri::generate_handler![
+            clear_notifications,
+            dismiss_notification,
             get_app_settings,
+            get_notification_capture_status,
+            get_notifications,
             hide_toast_overlay,
             notification_listener_status,
+            push_demo_notification,
             push_demo_toast,
             update_app_settings
         ])
