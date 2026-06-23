@@ -1263,6 +1263,9 @@ function EyeRestOverlay() {
           <button type="button" disabled={!canResume()} onClick={resume}>
             Continue timer
           </button>
+          <button type="button" class="secondary" onClick={resume}>
+            Skip rest
+          </button>
         </div>
         <Show when={error()}>
           {(message) => <small class="eye-rest-error">{message()}</small>}

@@ -1207,7 +1207,7 @@ fn show_eye_rest_window(app: &AppHandle) -> Result<(), String> {
         let work_area = monitor.work_area();
         let scale = monitor.scale_factor();
         let logical_width = 380.0 * scale;
-        let logical_height = 300.0 * scale;
+        let logical_height = 340.0 * scale;
         let margin = 24.0 * scale;
         let x = work_area.position.x as f64 + work_area.size.width as f64 - logical_width - margin;
         let y =

@@ -569,17 +569,17 @@ button {
   width: 100vw;
   height: 100vh;
   place-items: stretch;
-  padding: 14px;
+  padding: 12px;
   background: transparent;
 }
 
 .eye-rest-card {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 10px;
   height: 100%;
-  overflow: auto;
-  padding: 18px;
+  overflow: hidden;
+  padding: 16px;
   border: 1px solid rgba(147, 197, 253, 0.72);
   border-radius: 8px;
   color: #172033;
@@ -597,13 +597,13 @@ button {
 .eye-rest-card strong {
   display: block;
   color: #111827;
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .eye-rest-card p {
   margin: 0;
   color: #475569;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .eye-rest-countdown {
@@ -614,7 +614,7 @@ button {
 
 .eye-rest-countdown strong {
   color: #1d4ed8;
-  font-size: 38px;
+  font-size: 34px;
   line-height: 1;
 }
 
@@ -626,7 +626,7 @@ button {
 
 .eye-rest-card button {
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 8px;
   color: #ffffff;
   background: #2563eb;
@@ -635,7 +635,12 @@ button {
 
 .eye-rest-actions {
   display: grid;
-  gap: 8px;
+  gap: 7px;
+}
+
+.eye-rest-card button.secondary {
+  color: #1d4ed8;
+  background: #dbeafe;
 }
 
 .eye-rest-card button:disabled {
