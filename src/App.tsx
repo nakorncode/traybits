@@ -803,6 +803,7 @@ function ToastOverlay() {
   const [lastPollError, setLastPollError] = createSignal<string>();
   const [windowApiError, setWindowApiError] = createSignal<string>();
   const announcedIds = new Set<string>();
+  const activeSonnerIds = new Set<string>();
   let initialSyncDone = false;
 
   onMount(() => {
@@ -841,7 +842,7 @@ function ToastOverlay() {
 
       setToasts(visible);
       if (visible.length === 0) {
-        hideWhenEmpty();
+        scheduleOverlayHide();
       }
     } catch (error) {
       setLastPollError(error instanceof Error ? error.message : String(error));
@@ -851,25 +852,31 @@ function ToastOverlay() {
   function showOverlaySonner(notification: AppNotification) {
     if (announcedIds.has(notification.id)) return;
     announcedIds.add(notification.id);
+    activeSonnerIds.add(notification.id);
     toast.info(notification.title, {
+      id: notification.id,
       toasterId: "overlay",
       description: `${notification.source}: ${notification.body}`,
       duration: 8000,
+      closeButton: true,
+      onDismiss: () => {
+        activeSonnerIds.delete(notification.id);
+        void invoke("dismiss_notification", { id: notification.id });
+        scheduleOverlayHide();
+      },
+      onAutoClose: () => {
+        activeSonnerIds.delete(notification.id);
+        scheduleOverlayHide();
+      },
     });
   }
 
-  function dismiss(id: string) {
-    invoke("dismiss_notification", { id }).catch(() => undefined);
-    setToasts((items) => items.filter((toast) => toast.id !== id));
-    hideWhenEmpty();
-  }
-
-  function hideWhenEmpty() {
+  function scheduleOverlayHide() {
     window.setTimeout(() => {
-      if (toasts().length === 0 && !settings()?.notificationOverlayDebugVisible) {
+      if (activeSonnerIds.size === 0 && !settings()?.notificationOverlayDebugVisible) {
         invoke("hide_toast_overlay").catch(() => undefined);
       }
-    }, 180);
+    }, 250);
   }
 
   return (
@@ -901,23 +908,12 @@ function ToastOverlay() {
         closeButton
         expand
         visibleToasts={4}
+        duration={8000}
+        pauseWhenPageIsHidden={false}
+        toastOptions={{
+          closeButtonAriaLabel: "Close notification",
+        }}
       />
-      <For each={toasts()}>
-        {(toast) => (
-          <article class={`toast-card tone-${toast.tone}`}>
-            <div class="toast-icon">{toast.source.slice(0, 1)}</div>
-            <div class="toast-copy">
-              <span>{toast.source}</span>
-              <strong>{toast.title}</strong>
-              <p>{toast.body}</p>
-              <small>{formatTimestamp(toast.createdAt)}</small>
-            </div>
-            <button type="button" aria-label="Dismiss toast" onClick={() => dismiss(toast.id)}>
-              ×
-            </button>
-          </article>
-        )}
-      </For>
     </div>
   );
 }

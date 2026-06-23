@@ -502,6 +502,7 @@ fn hide_toast_overlay(app: AppHandle) -> Result<(), String> {
         return Ok(());
     };
 
+    let _ = window.set_ignore_cursor_events(true);
     window.hide().map_err(|error| error.to_string())
 }
 
@@ -663,6 +664,7 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
     }
 
     let _ = window.set_always_on_top(true);
+    let _ = window.set_ignore_cursor_events(false);
     window.show().map_err(|error| error.to_string())
 }
 
