@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
-type ToolId = "toastdesk" | "eye-rest" | "capslang" | "settings";
+type ToolId = "persistent-notifications" | "eye-rest" | "caps-lock-language-switch" | "settings";
 
 type ToastPayload = {
   id: number;
@@ -30,23 +30,23 @@ const tools: Array<{
   status: string;
 }> = [
   {
-    id: "toastdesk",
-    name: "ToastDesk",
-    description: "Persistent desktop toast cards rendered by a Tauri webview.",
-    glyph: "T",
+    id: "persistent-notifications",
+    name: "Persistent Notifications",
+    description: "Keep Windows notifications visible as desktop cards until dismissed or handled.",
+    glyph: "N",
     status: "Prototype",
   },
   {
     id: "eye-rest",
-    name: "20-20-20",
-    description: "Eye-rest reminders for long desktop sessions.",
+    name: "Eye Rest Reminder",
+    description: "Show periodic 20-20-20 reminders for long desktop sessions.",
     glyph: "20",
     status: "Planned",
   },
   {
-    id: "capslang",
-    name: "CapsLang",
-    description: "Use CapsLock as a safer input-language switch key.",
+    id: "caps-lock-language-switch",
+    name: "Caps Lock Language Switch",
+    description: "Use Caps Lock as a quick input-language switch while preserving clear lock behavior.",
     glyph: "C",
     status: "Spike",
   },
@@ -71,7 +71,7 @@ function App() {
 }
 
 function MainApp() {
-  const [activeTool, setActiveTool] = createSignal<ToolId>("toastdesk");
+  const [activeTool, setActiveTool] = createSignal<ToolId>("persistent-notifications");
   const [listenerStatus, setListenerStatus] = createSignal<NotificationListenerStatus>();
 
   onMount(async () => {
@@ -125,14 +125,14 @@ function MainApp() {
           </button>
         </header>
 
-        <Show when={activeTool() === "toastdesk"}>
-          <ToastDeskPanel pushToast={pushToast} listenerStatus={listenerStatus()} />
+        <Show when={activeTool() === "persistent-notifications"}>
+          <PersistentNotificationsPanel pushToast={pushToast} listenerStatus={listenerStatus()} />
         </Show>
         <Show when={activeTool() === "eye-rest"}>
           <EyeRestPanel pushToast={pushToast} />
         </Show>
-        <Show when={activeTool() === "capslang"}>
-          <CapsLangPanel pushToast={pushToast} />
+        <Show when={activeTool() === "caps-lock-language-switch"}>
+          <CapsLockLanguageSwitchPanel pushToast={pushToast} />
         </Show>
         <Show when={activeTool() === "settings"}>
           <SettingsPanel />
@@ -142,7 +142,7 @@ function MainApp() {
   );
 }
 
-function ToastDeskPanel(props: {
+function PersistentNotificationsPanel(props: {
   pushToast: (tone: string) => Promise<void>;
   listenerStatus?: NotificationListenerStatus;
 }) {
@@ -150,7 +150,7 @@ function ToastDeskPanel(props: {
     <div class="content-grid">
       <section class="panel primary-panel">
         <div class="section-title">
-          <span>Toast renderer</span>
+          <span>Persistent renderer</span>
           <strong>Solid overlay window</strong>
         </div>
         <p>
@@ -162,10 +162,10 @@ function ToastDeskPanel(props: {
             Windows notification
           </button>
           <button type="button" onClick={() => props.pushToast("rest")}>
-            20-20-20 reminder
+            Eye rest reminder
           </button>
-          <button type="button" onClick={() => props.pushToast("capslang")}>
-            CapsLang event
+          <button type="button" onClick={() => props.pushToast("language-switch")}>
+            Language switch event
           </button>
         </div>
       </section>
@@ -213,7 +213,7 @@ function EyeRestPanel(props: { pushToast: (tone: string) => Promise<void> }) {
     <section class="panel primary-panel">
       <div class="section-title">
         <span>Reminder preview</span>
-        <strong>20-20-20 notification flow</strong>
+        <strong>20-20-20 reminder flow</strong>
       </div>
       <p>
         This utility can stay mostly Rust-owned: a timer decides when to notify, then emits a
@@ -226,19 +226,19 @@ function EyeRestPanel(props: { pushToast: (tone: string) => Promise<void> }) {
   );
 }
 
-function CapsLangPanel(props: { pushToast: (tone: string) => Promise<void> }) {
+function CapsLockLanguageSwitchPanel(props: { pushToast: (tone: string) => Promise<void> }) {
   return (
     <section class="panel primary-panel">
       <div class="section-title">
         <span>Keyboard spike</span>
-        <strong>CapsLock to input-language switch</strong>
+        <strong>Caps Lock to input-language switch</strong>
       </div>
       <p>
         Rust should own the low-level keyboard hook and input-language API calls. The UI only shows
         status, settings, and event feedback.
       </p>
-      <button type="button" onClick={() => props.pushToast("capslang")}>
-        Preview CapsLang toast
+      <button type="button" onClick={() => props.pushToast("language-switch")}>
+        Preview language switch toast
       </button>
     </section>
   );

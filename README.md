@@ -29,17 +29,20 @@ native Windows integration.
 
 ## Planned Utilities
 
-TrayBits starts as an umbrella for these existing or planned tools:
+TrayBits starts as an umbrella for these existing or planned modules:
 
-| Utility | Purpose | Current source |
+| Module | Purpose | Reference source |
 | --- | --- | --- |
-| ToastDesk | Persistent Windows notification cards that stay visible until acted on. | `G:\NakornCode\git\toastdeck` |
-| 20-20-20 reminder | Periodic eye-rest notifications for the 20-20-20 rule. | Planned / to be located |
-| CapsLang | Turn `CapsLock` into a safer input-language switch key. | `G:\Freespace\capslang-windows` |
+| Persistent Notifications | Keep Windows notifications visible as desktop cards until dismissed or handled. | `G:\NakornCode\git\toastdeck` |
+| Eye Rest Reminder | Show periodic 20-20-20 reminders for long desktop sessions. | Planned / to be located |
+| Caps Lock Language Switch | Use Caps Lock as a quick input-language switch while preserving clear lock behavior. | `G:\Freespace\capslang-windows` |
 
 The first goal is not to merge code blindly. TrayBits should prove the Tauri
 shape first, then decide case by case whether each tool should be ported,
 wrapped, or kept separate.
+
+Names inside TrayBits should describe the behavior directly. Branded names from
+the standalone tools are reference names only, not product-facing module names.
 
 ## Architecture Direction
 
@@ -55,7 +58,7 @@ Tauri bridge
 
 Rust Windows core
   - future notification listener
-  - future CapsLock hook and input-language switching
+  - future Caps Lock hook and input-language switching
   - future 20-20-20 scheduler
 ```
 
@@ -77,16 +80,16 @@ capability, and explicit user permission.
 ## Repository Status
 
 This repository is an early prototype. The UI shell and demo overlay compile,
-but real Windows notification capture and CapsLock switching are not implemented
-yet.
+but real Windows notification capture and Caps Lock switching are not
+implemented yet.
 
 Expected next steps:
 
 1. Prove real `UserNotificationListener` access from a packaged Tauri app.
-2. Prototype CapsLock interception and language switching in Rust.
+2. Prototype Caps Lock interception and language switching in Rust.
 3. Port the 20-20-20 reminder timer into the Rust core.
-4. Decide whether ToastDesk and CapsLang are ported into this repo or kept as
-   reference implementations.
+4. Decide whether the standalone notification and Caps Lock tools are ported
+   into this repo or kept as reference implementations.
 
 ## Development
 

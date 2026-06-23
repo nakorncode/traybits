@@ -41,19 +41,19 @@ fn push_demo_toast(app: AppHandle, tone: String) -> Result<(), String> {
     let payload = ToastPayload {
         id: monotonic_millis(),
         source: match tone.as_str() {
-            "capslang" => "CapsLang".into(),
-            "rest" => "20-20-20".into(),
+            "language-switch" => "Caps Lock Language Switch".into(),
+            "rest" => "Eye Rest Reminder".into(),
             "windows" => "Windows Notification".into(),
             _ => "TrayBits".into(),
         },
         title: match tone.as_str() {
-            "capslang" => "Input language switched".into(),
+            "language-switch" => "Input language switched".into(),
             "rest" => "Look 20 feet away".into(),
             "windows" => "New notification captured".into(),
             _ => "TrayBits toast".into(),
         },
         body: match tone.as_str() {
-            "capslang" => "CapsLock was intercepted by Rust and converted into a language-switch action.".into(),
+            "language-switch" => "Caps Lock was intercepted by Rust and converted into a language-switch action.".into(),
             "rest" => "Rest your eyes for 20 seconds. This is rendered by the Solid overlay window.".into(),
             "windows" => "This demo event follows the same bridge shape planned for UserNotificationListener.".into(),
             _ => "Rust emitted this event to the always-on-top toast webview.".into(),

@@ -9,9 +9,10 @@ to PowerToys but smaller and focused on the user's daily desktop tools.
 
 Initial scope:
 
-- `ToastDesk`: persistent Windows notification cards.
-- `20-20-20 reminder`: eye-rest notifications.
-- `CapsLang`: CapsLock-based input-language switching.
+- `Persistent Notifications`: Windows notification cards that stay visible
+  until dismissed or handled.
+- `Eye Rest Reminder`: 20-20-20 eye-rest notifications.
+- `Caps Lock Language Switch`: Caps Lock based input-language switching.
 
 The current prototype uses Tauri 2, Rust, and SolidJS. Do not assume the
 existing .NET tools should be merged directly. First inspect the current code
@@ -29,6 +30,10 @@ Known related paths on this PC:
 `toastdeck` and `capslang-windows` are existing .NET Windows app projects with
 their own `AGENTS.md`, release scripts, assets, and build outputs. Read their
 local instructions before porting behavior.
+
+Use direct behavior names for TrayBits modules. Keep standalone project names
+such as ToastDesk and CapsLang only as reference-source or migration-context
+labels.
 
 ## Current Stack
 
@@ -89,7 +94,8 @@ unless the task requires it or the user explicitly asks.
 
 ## Windows Native Spikes
 
-Real notification capture should be proven before porting ToastDesk:
+Real notification capture should be proven before porting the standalone
+notification-card behavior:
 
 - Use `Windows.UI.Notifications.Management.UserNotificationListener`.
 - Request access from a UI-owned path.
@@ -97,9 +103,9 @@ Real notification capture should be proven before porting ToastDesk:
 - Sync current notifications with `GetNotificationsAsync(NotificationKinds.Toast)`.
 - Expect app identity, manifest capability, and user permission issues.
 
-CapsLang behavior should stay Rust-owned:
+Caps Lock language switching should stay Rust-owned:
 
 - Low-level keyboard hook or a safer Windows-native alternative.
-- Explicit handling for real CapsLock on/off behavior.
+- Explicit handling for real Caps Lock on/off behavior.
 - No broad keystroke logging.
 - UI only controls settings and displays state.
