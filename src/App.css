@@ -312,6 +312,12 @@ button {
   background: #fafbff;
 }
 
+.debug-facts dd {
+  overflow-wrap: anywhere;
+  font-family: Consolas, "SFMono-Regular", "Roboto Mono", monospace;
+  line-height: 1.45;
+}
+
 .steps {
   display: grid;
   gap: 10px;

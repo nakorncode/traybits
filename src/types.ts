@@ -88,6 +88,15 @@ export type CurrentLanguageIndicatorStatus = {
   caretAvailable: boolean;
   source: string;
   message: string;
+  debug: CurrentLanguageIndicatorDebug;
+};
+
+export type CurrentLanguageIndicatorDebug = {
+  foregroundWindow: string;
+  foregroundThreadId?: number;
+  keyboardLayout?: string;
+  uiAutomation: string;
+  win32Caret: string;
 };
 
 export type LanguageIndicatorPayload = {

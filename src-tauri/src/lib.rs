@@ -364,6 +364,17 @@ struct CurrentLanguageIndicatorStatus {
     caret_available: bool,
     source: String,
     message: String,
+    debug: CurrentLanguageIndicatorDebug,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentLanguageIndicatorDebug {
+    foreground_window: String,
+    foreground_thread_id: Option<u32>,
+    keyboard_layout: Option<String>,
+    ui_automation: String,
+    win32_caret: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -2136,8 +2147,8 @@ mod notification_capture {
 #[cfg(target_os = "windows")]
 mod language_indicator {
     use super::{
-        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
-        LanguageIndicatorPayload,
+        CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorSettings,
+        CurrentLanguageIndicatorStatus, InputLanguageInfo, LanguageIndicatorPayload,
     };
     use std::{
         sync::{Mutex, OnceLock},
@@ -2210,8 +2221,9 @@ mod language_indicator {
     }
 
     pub fn status(enabled: bool) -> CurrentLanguageIndicatorStatus {
-        let current = active_language_snapshot().map(|snapshot| snapshot.language);
-        let caret = caret_position();
+        let current = active_input_language();
+        let caret_probe = caret_position_probe();
+        let caret = caret_probe.position;
         let caret_available = caret.is_some();
         CurrentLanguageIndicatorStatus {
             enabled,
@@ -2225,6 +2237,13 @@ mod language_indicator {
                 "The monitor is enabled. It shows the marker only when TrayBits can read the real caret position.".into()
             } else {
                 "The monitor is disabled. Enable it to test the caret language marker.".into()
+            },
+            debug: CurrentLanguageIndicatorDebug {
+                foreground_window: foreground_window_debug(),
+                foreground_thread_id: foreground_thread_id(),
+                keyboard_layout: active_keyboard_layout_debug(),
+                ui_automation: caret_probe.ui_automation,
+                win32_caret: caret_probe.win32_caret,
             },
         }
     }
@@ -2302,14 +2321,7 @@ mod language_indicator {
     }
 
     fn active_language_snapshot() -> Option<IndicatorSnapshot> {
-        let foreground_window = unsafe { GetForegroundWindow() };
-        if foreground_window.is_invalid() {
-            return None;
-        }
-
-        let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
-        let layout = unsafe { GetKeyboardLayout(thread_id) };
-        let language = language_from_layout(layout)?;
+        let language = active_input_language()?;
         let position = caret_position()?;
         Some(IndicatorSnapshot {
             signature: format!("{}:{}", language.id, position.source),
@@ -2318,6 +2330,17 @@ mod language_indicator {
             y: position.y,
             caret_available: position.caret_available,
         })
+    }
+
+    fn active_input_language() -> Option<InputLanguageInfo> {
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if foreground_window.is_invalid() {
+            return None;
+        }
+
+        let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+        let layout = unsafe { GetKeyboardLayout(thread_id) };
+        language_from_layout(layout)
     }
 
     #[derive(Clone, Copy)]
@@ -2329,30 +2352,94 @@ mod language_indicator {
     }
 
     fn caret_position() -> Option<IndicatorPosition> {
-        uia_caret_position().or_else(win32_caret_position)
+        caret_position_probe().position
     }
 
-    fn uia_caret_position() -> Option<IndicatorPosition> {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-            let automation: IUIAutomation =
-                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
-            let element = automation.GetFocusedElement().ok()?;
-            let pattern: IUIAutomationTextPattern2 =
-                element.GetCurrentPatternAs(UIA_TextPattern2Id).ok()?;
-            let mut is_active = windows::core::BOOL(0);
-            let range = pattern.GetCaretRange(&mut is_active).ok()?;
-            if !is_active.as_bool() {
-                return None;
+    struct CaretPositionProbe {
+        position: Option<IndicatorPosition>,
+        ui_automation: String,
+        win32_caret: String,
+    }
+
+    fn caret_position_probe() -> CaretPositionProbe {
+        match uia_caret_position_probe() {
+            (Some(position), message) => CaretPositionProbe {
+                position: Some(position),
+                ui_automation: message,
+                win32_caret: "Skipped because UI Automation found an active caret.".into(),
+            },
+            (None, ui_automation) => {
+                let (position, win32_caret) = win32_caret_position_probe();
+                CaretPositionProbe {
+                    position,
+                    ui_automation,
+                    win32_caret,
+                }
             }
-            let rectangles = range.GetBoundingRectangles().ok()?;
-            let first = first_uia_text_rectangle(rectangles)?;
-            Some(IndicatorPosition {
-                x: first.x.round() as i32 + first.width.max(1.0).round() as i32 + 8,
-                y: first.y.round() as i32 + first.height.max(1.0).round() as i32 + 8,
-                caret_available: true,
-                source: "UI Automation TextPattern2",
-            })
+        }
+    }
+
+    fn uia_caret_position_probe() -> (Option<IndicatorPosition>, String) {
+        unsafe {
+            let mut notes = Vec::<String>::new();
+            let com_init = CoInitializeEx(None, COINIT_MULTITHREADED);
+            if com_init.is_err() {
+                notes.push(format!("CoInitializeEx returned {com_init:?}"));
+            }
+            let automation: IUIAutomation = match CoCreateInstance(
+                &CUIAutomation,
+                None,
+                CLSCTX_INPROC_SERVER,
+            ) {
+                Ok(automation) => automation,
+                Err(error) => return (None, format!("CoCreateInstance failed: {error}")),
+            };
+            let element = match automation.GetFocusedElement() {
+                Ok(element) => element,
+                Err(error) => return (None, format!("GetFocusedElement failed: {error}")),
+            };
+            let pattern: IUIAutomationTextPattern2 =
+                match element.GetCurrentPatternAs(UIA_TextPattern2Id) {
+                    Ok(pattern) => pattern,
+                    Err(error) => {
+                        return (
+                            None,
+                            format!("Focused element has no TextPattern2: {error}"),
+                        )
+                    }
+                };
+            let mut is_active = windows::core::BOOL(0);
+            let range = match pattern.GetCaretRange(&mut is_active) {
+                Ok(range) => range,
+                Err(error) => return (None, format!("GetCaretRange failed: {error}")),
+            };
+            if !is_active.as_bool() {
+                return (None, "TextPattern2 caret range is not active.".into());
+            }
+            let rectangles = match range.GetBoundingRectangles() {
+                Ok(rectangles) => rectangles,
+                Err(error) => return (None, format!("GetBoundingRectangles failed: {error}")),
+            };
+            let Some(first) = first_uia_text_rectangle(rectangles) else {
+                return (None, "TextPattern2 returned no caret rectangle.".into());
+            };
+            let mut message = format!(
+                "Active caret rectangle x={} y={} width={} height={}.",
+                first.x, first.y, first.width, first.height
+            );
+            if !notes.is_empty() {
+                message.push_str(" Notes: ");
+                message.push_str(notes.join("; ").as_str());
+            }
+            (
+                Some(IndicatorPosition {
+                    x: first.x.round() as i32 + first.width.max(1.0).round() as i32 + 8,
+                    y: first.y.round() as i32 + first.height.max(1.0).round() as i32 + 8,
+                    caret_available: true,
+                    source: "UI Automation TextPattern2",
+                }),
+                message,
+            )
         }
     }
 
@@ -2400,14 +2487,22 @@ mod language_indicator {
         result
     }
 
-    fn win32_caret_position() -> Option<IndicatorPosition> {
+    fn win32_caret_position_probe() -> (Option<IndicatorPosition>, String) {
         let mut info = GUITHREADINFO {
             cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
             ..Default::default()
         };
-        unsafe { GetGUIThreadInfo(0, &mut info).ok()? };
+        if let Err(error) = unsafe { GetGUIThreadInfo(0, &mut info) } {
+            return (None, format!("GetGUIThreadInfo failed: {error}"));
+        }
         if info.hwndCaret.is_invalid() || (info.flags & GUI_CARETBLINKING).0 == 0 {
-            return None;
+            return (
+                None,
+                format!(
+                    "No blinking Win32 caret. hwndCaret={:?}, flags=0x{:x}",
+                    info.hwndCaret, info.flags.0
+                ),
+            );
         }
 
         let mut point = POINT {
@@ -2415,15 +2510,62 @@ mod language_indicator {
             y: info.rcCaret.bottom + 8,
         };
         if !unsafe { ClientToScreen(info.hwndCaret, &mut point) }.as_bool() {
-            return None;
+            return (None, "ClientToScreen failed for hwndCaret.".into());
         }
 
-        Some(IndicatorPosition {
-            x: point.x,
-            y: point.y,
-            caret_available: true,
-            source: "Win32 GetGUIThreadInfo",
-        })
+        (
+            Some(IndicatorPosition {
+                x: point.x,
+                y: point.y,
+                caret_available: true,
+                source: "Win32 GetGUIThreadInfo",
+            }),
+            format!(
+                "Blinking caret hwnd={:?}, rect=({}, {}, {}, {}), screen=({}, {}).",
+                info.hwndCaret,
+                info.rcCaret.left,
+                info.rcCaret.top,
+                info.rcCaret.right,
+                info.rcCaret.bottom,
+                point.x,
+                point.y
+            ),
+        )
+    }
+
+    fn foreground_window_debug() -> String {
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if foreground_window.is_invalid() {
+            "No foreground window.".into()
+        } else {
+            format!("{:?}", foreground_window)
+        }
+    }
+
+    fn foreground_thread_id() -> Option<u32> {
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if foreground_window.is_invalid() {
+            return None;
+        }
+        let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+        if thread_id == 0 {
+            None
+        } else {
+            Some(thread_id)
+        }
+    }
+
+    fn active_keyboard_layout_debug() -> Option<String> {
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if foreground_window.is_invalid() {
+            return None;
+        }
+        let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+        if thread_id == 0 {
+            return None;
+        }
+        let layout = unsafe { GetKeyboardLayout(thread_id) };
+        Some(format!("0x{:x}", layout.0 as usize))
     }
 
     fn installed_languages() -> Vec<InputLanguageInfo> {
@@ -2493,7 +2635,8 @@ mod language_indicator {
 #[cfg(not(target_os = "windows"))]
 mod language_indicator {
     use super::{
-        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
+        CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorSettings,
+        CurrentLanguageIndicatorStatus, InputLanguageInfo,
     };
     use tauri::AppHandle;
 
@@ -2507,6 +2650,13 @@ mod language_indicator {
             caret_available: false,
             source: "unsupported".into(),
             message: "Current Language Indicator is only implemented on Windows.".into(),
+            debug: CurrentLanguageIndicatorDebug {
+                foreground_window: "unsupported".into(),
+                foreground_thread_id: None,
+                keyboard_layout: None,
+                ui_automation: "unsupported".into(),
+                win32_caret: "unsupported".into(),
+            },
         }
     }
 

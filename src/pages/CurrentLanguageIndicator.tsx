@@ -90,6 +90,35 @@ export function CurrentLanguageIndicatorPanel(props: {
         <p class="hint-text">{status()?.message ?? "Loading indicator status..."}</p>
       </section>
 
+      <section class="panel">
+        <div class="section-title">
+          <span>Debug</span>
+          <strong>Caret provider probes</strong>
+        </div>
+        <dl class="fact-list compact-facts debug-facts">
+          <div>
+            <dt>Foreground window</dt>
+            <dd>{status()?.debug.foregroundWindow ?? "Loading"}</dd>
+          </div>
+          <div>
+            <dt>Foreground thread</dt>
+            <dd>{status()?.debug.foregroundThreadId ?? "Not available"}</dd>
+          </div>
+          <div>
+            <dt>Keyboard layout</dt>
+            <dd>{status()?.debug.keyboardLayout ?? "Not available"}</dd>
+          </div>
+          <div>
+            <dt>UI Automation</dt>
+            <dd>{status()?.debug.uiAutomation ?? "Loading"}</dd>
+          </div>
+          <div>
+            <dt>Win32 caret</dt>
+            <dd>{status()?.debug.win32Caret ?? "Loading"}</dd>
+          </div>
+        </dl>
+      </section>
+
       <section class="panel wide-panel">
         <div class="section-title">
           <span>Installed input languages</span>
