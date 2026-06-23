@@ -110,5 +110,9 @@ Caps Lock language switching should stay Rust-owned:
 - Switch input language like the standalone CapsLang app: post
   `WM_INPUTLANGCHANGEREQUEST` with `INPUTLANGCHANGE_FORWARD` and `HKL_NEXT` to
   the foreground window, not `HWND_BROADCAST`, and do not simulate `Win+Space`.
+- When the foreground window belongs to TrayBits itself, use
+  `ActivateKeyboardLayout` on the next installed layout instead of posting the
+  foreground-window message; WebView/Tauri windows may not handle that message
+  like normal editor windows.
 - No broad keystroke logging.
 - UI only controls settings and displays state.

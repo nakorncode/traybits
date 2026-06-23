@@ -385,15 +385,19 @@ mod keyboard {
     };
     use windows::Win32::{
         Foundation::{LPARAM, LRESULT, WPARAM},
+        System::Threading::GetCurrentProcessId,
         UI::{
             Input::KeyboardAndMouse::{
-                keybd_event, GetAsyncKeyState, GetKeyState, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
+                keybd_event, ActivateKeyboardLayout, GetAsyncKeyState, GetKeyState,
+                GetKeyboardLayout, GetKeyboardLayoutList, ACTIVATE_KEYBOARD_LAYOUT_FLAGS,
+                KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KLF_ACTIVATE, KLF_SETFORPROCESS,
                 VK_CAPITAL, VK_CONTROL, VK_MENU, VK_SHIFT,
             },
             WindowsAndMessaging::{
-                CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, PostMessageW,
-                SetWindowsHookExW, TranslateMessage, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG,
-                WH_KEYBOARD_LL, WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_SYSKEYDOWN,
+                CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW,
+                GetWindowThreadProcessId, PostMessageW, SetWindowsHookExW, TranslateMessage,
+                HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_INPUTLANGCHANGEREQUEST,
+                WM_KEYDOWN, WM_SYSKEYDOWN,
             },
         },
     };
@@ -525,16 +529,50 @@ mod keyboard {
 
     fn switch_input_language() {
         let foreground_window = unsafe { GetForegroundWindow() };
-        if !foreground_window.is_invalid() {
-            let _ = unsafe {
-                PostMessageW(
-                    Some(foreground_window),
-                    WM_INPUTLANGCHANGEREQUEST,
-                    WPARAM(INPUTLANGCHANGE_FORWARD),
-                    LPARAM(HKL_NEXT),
-                )
-            };
+        if foreground_window.is_invalid() {
+            return;
         }
+
+        let mut process_id = 0;
+        let foreground_thread_id =
+            unsafe { GetWindowThreadProcessId(foreground_window, Some(&mut process_id)) };
+
+        if process_id == unsafe { GetCurrentProcessId() } {
+            activate_next_keyboard_layout(foreground_thread_id);
+            return;
+        }
+
+        let _ = unsafe {
+            PostMessageW(
+                Some(foreground_window),
+                WM_INPUTLANGCHANGEREQUEST,
+                WPARAM(INPUTLANGCHANGE_FORWARD),
+                LPARAM(HKL_NEXT),
+            )
+        };
+    }
+
+    fn activate_next_keyboard_layout(thread_id: u32) {
+        let count = unsafe { GetKeyboardLayoutList(None) };
+        if count <= 1 {
+            return;
+        }
+
+        let mut layouts = vec![Default::default(); count as usize];
+        let loaded = unsafe { GetKeyboardLayoutList(Some(&mut layouts)) };
+        if loaded <= 1 {
+            return;
+        }
+
+        let current = unsafe { GetKeyboardLayout(thread_id) };
+        let next = layouts
+            .iter()
+            .position(|layout| *layout == current)
+            .map(|index| layouts[(index + 1) % loaded as usize])
+            .unwrap_or(layouts[0]);
+
+        let flags = ACTIVATE_KEYBOARD_LAYOUT_FLAGS(KLF_ACTIVATE.0 | KLF_SETFORPROCESS.0);
+        let _ = unsafe { ActivateKeyboardLayout(next, flags) };
     }
 }
 
