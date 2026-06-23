@@ -631,6 +631,7 @@ button {
   color: #ffffff;
   background: #2563eb;
   font-weight: 700;
+  cursor: pointer;
 }
 
 .eye-rest-actions {
@@ -644,7 +645,7 @@ button {
 }
 
 .eye-rest-card button:disabled {
-  cursor: default;
+  cursor: not-allowed;
   color: #64748b;
   background: #dbeafe;
 }
