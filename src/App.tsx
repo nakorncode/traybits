@@ -103,10 +103,8 @@ type MainAppContextValue = {
   captureStatus: Accessor<NotificationCaptureStatus | undefined>;
   pushToast: (tone: string) => Promise<void>;
   pushDemoNotification: () => Promise<void>;
-  pushOverlaySonnerToast: () => Promise<void>;
   dismissNotification: (id: string) => Promise<void>;
   clearNotificationHistory: () => Promise<void>;
-  showMainSonnerToast: () => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
   updateCapsLockSettings: (patch: Partial<AppSettings["capsLockLanguageSwitch"]>) => void;
 };
@@ -234,11 +232,6 @@ function MainApp(props: ParentProps) {
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
       setNotifications((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)]);
-      if (!event.payload.silent && event.payload.origin === "windows") {
-        toast.info(event.payload.title, {
-          description: `${event.payload.source}: ${event.payload.body}`,
-        });
-      }
       void refreshCaptureStatus();
     });
     const unlistenDismissed = await listen<string>("traybits://notification-dismissed", (event) => {
@@ -274,27 +267,7 @@ function MainApp(props: ParentProps) {
       ]);
       const status = `Windows: ${result.nativeNotification.message} Overlay: ${result.overlay.message}`;
       setNotificationStatus(status);
-      if (result.nativeNotification.ok && result.overlay.ok) {
-        toast.success("Preview notification requested", { description: status });
-      } else {
-        toast.warning("Preview notification has a delivery issue", { description: status });
-      }
       await refreshCaptureStatus();
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function pushOverlaySonnerToast() {
-    setNotificationError(undefined);
-    setNotificationStatus(undefined);
-    try {
-      const notification = await invoke<AppNotification>("push_overlay_debug_notification");
-      setNotifications((items) => [
-        notification,
-        ...items.filter((item) => item.id !== notification.id),
-      ]);
-      setNotificationStatus("Overlay debug notification was added to the shared store.");
     } catch (error) {
       setNotificationError(error instanceof Error ? error.message : String(error));
     }
@@ -308,12 +281,6 @@ function MainApp(props: ParentProps) {
   async function clearNotificationHistory() {
     await invoke("clear_notifications");
     setNotifications([]);
-  }
-
-  function showMainSonnerToast() {
-    toast.success("Solid Sonner rendered in the main window", {
-      description: "This proves browser-window toast rendering works separately from the transparent overlay.",
-    });
   }
 
   async function refreshCaptureStatus() {
@@ -359,10 +326,8 @@ function MainApp(props: ParentProps) {
     captureStatus,
     pushToast,
     pushDemoNotification,
-    pushOverlaySonnerToast,
     dismissNotification,
     clearNotificationHistory,
-    showMainSonnerToast,
     updateSettings,
     updateCapsLockSettings,
   };
@@ -406,7 +371,6 @@ function MainApp(props: ParentProps) {
           </header>
 
           {props.children}
-          <Toaster position="top-right" richColors closeButton expand visibleToasts={5} />
         </section>
       </main>
     </MainAppContext.Provider>
@@ -422,10 +386,8 @@ function PersistentNotificationsRoute() {
       notifications={app.notifications()}
       overlayMonitors={app.overlayMonitors()}
       pushDemoNotification={app.pushDemoNotification}
-      pushOverlaySonnerToast={app.pushOverlaySonnerToast}
       clearNotifications={app.clearNotificationHistory}
       dismissNotification={app.dismissNotification}
-      showMainSonnerToast={app.showMainSonnerToast}
       settings={app.settings()}
       updateSettings={app.updateSettings}
       settingsError={app.settingsError()}
@@ -469,10 +431,8 @@ function PersistentNotificationsPanel(props: {
   notifications: AppNotification[];
   overlayMonitors: OverlayMonitorOption[];
   pushDemoNotification: () => Promise<void>;
-  pushOverlaySonnerToast: () => Promise<void>;
   clearNotifications: () => Promise<void>;
   dismissNotification: (id: string) => Promise<void>;
-  showMainSonnerToast: () => void;
   settings?: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
   settingsError?: string;
@@ -511,12 +471,6 @@ function PersistentNotificationsPanel(props: {
         <div class="button-row">
           <button type="button" onClick={props.pushDemoNotification}>
             Run preview demo notification
-          </button>
-          <button type="button" onClick={props.showMainSonnerToast}>
-            Run main-window sonner toast
-          </button>
-          <button type="button" onClick={props.pushOverlaySonnerToast}>
-            Run overlay-window sonner toast
           </button>
           <button type="button" onClick={props.clearNotifications}>
             Clear history
@@ -828,6 +782,7 @@ function ToastOverlay() {
       setSettings(appSettings);
       setLastPollAt(new Date().toLocaleTimeString());
       setLastPollError(undefined);
+      const visibleIds = new Set(visible.map((notification) => notification.id));
 
       if (!initialSyncDone) {
         for (const notification of visible) {
@@ -840,8 +795,14 @@ function ToastOverlay() {
         }
       }
 
+      for (const id of Array.from(activeSonnerIds)) {
+        if (!visibleIds.has(id)) {
+          activeSonnerIds.delete(id);
+          toast.dismiss(id);
+        }
+      }
       setToasts(visible);
-      if (visible.length === 0) {
+      if (activeSonnerIds.size === 0) {
         scheduleOverlayHide();
       }
     } catch (error) {
@@ -857,18 +818,30 @@ function ToastOverlay() {
       id: notification.id,
       toasterId: "overlay",
       description: `${notification.source}: ${notification.body}`,
-      duration: 8000,
+      duration: Number.POSITIVE_INFINITY,
       closeButton: true,
+      action: notification.sourceAppUserModelId
+        ? {
+            label: "Open",
+            onClick: () => {
+              void openNotificationSource(notification.id);
+            },
+          }
+        : undefined,
       onDismiss: () => {
         activeSonnerIds.delete(notification.id);
         void invoke("dismiss_notification", { id: notification.id });
         scheduleOverlayHide();
       },
-      onAutoClose: () => {
-        activeSonnerIds.delete(notification.id);
-        scheduleOverlayHide();
-      },
     });
+  }
+
+  async function openNotificationSource(id: string) {
+    await invoke("open_notification_source", { id }).catch(() => undefined);
+    activeSonnerIds.delete(id);
+    toast.dismiss(id);
+    await invoke("dismiss_notification", { id }).catch(() => undefined);
+    scheduleOverlayHide();
   }
 
   function scheduleOverlayHide() {
@@ -908,10 +881,14 @@ function ToastOverlay() {
         closeButton
         expand
         visibleToasts={4}
-        duration={8000}
+        duration={Number.POSITIVE_INFINITY}
         pauseWhenPageIsHidden={false}
         toastOptions={{
           closeButtonAriaLabel: "Close notification",
+          classNames: {
+            toast: "overlay-sonner-toast",
+            description: "overlay-sonner-description",
+          },
         }}
       />
     </div>

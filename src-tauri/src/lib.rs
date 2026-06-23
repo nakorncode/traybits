@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
+use std::{collections::HashSet, fs, path::PathBuf, process::Command, sync::Mutex};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -339,33 +339,36 @@ fn push_demo_notification(
 }
 
 #[tauri::command]
-fn push_overlay_debug_notification(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<AppNotification, String> {
-    let notification = AppNotification {
-        id: format!("overlay-debug-{}", monotonic_millis()),
-        title: "Overlay-window sonner test".into(),
-        body: "This notification was written into Rust state so the overlay window can pull it without Tauri event delivery.".into(),
-        source: "TrayBits Overlay".into(),
-        source_app_user_model_id: None,
-        origin: NotificationOrigin::Demo,
-        created_at: now_timestamp(),
-        tone: "windows".into(),
-        silent: false,
-    };
-
-    add_notification(&app, state.inner(), notification.clone(), true, false)?;
-    Ok(notification)
-}
-
-#[tauri::command]
 fn dismiss_notification(
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
     dismiss_notification_by_id(&app, state.inner(), &id)
+}
+
+#[tauri::command]
+fn open_notification_source(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let source_app_user_model_id = state
+        .notifications
+        .lock()
+        .map_err(|error| error.to_string())?
+        .iter()
+        .find(|notification| notification.id == id)
+        .and_then(|notification| notification.source_app_user_model_id.clone());
+
+    if let Some(app_user_model_id) = source_app_user_model_id {
+        if open_source_app(&app_user_model_id) {
+            return Ok(());
+        }
+    }
+
+    show_main_window(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -623,6 +626,17 @@ fn show_main_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+fn open_source_app(app_user_model_id: &str) -> bool {
+    if app_user_model_id.trim().is_empty() {
+        return false;
+    }
+
+    Command::new("explorer.exe")
+        .arg(format!("shell:AppsFolder\\{app_user_model_id}"))
+        .spawn()
+        .is_ok()
 }
 
 fn show_toast_window(app: &AppHandle) -> Result<(), String> {
@@ -1466,8 +1480,8 @@ pub fn run() {
             get_notifications,
             hide_toast_overlay,
             notification_listener_status,
+            open_notification_source,
             push_demo_notification,
-            push_overlay_debug_notification,
             push_demo_toast,
             update_app_settings
         ])

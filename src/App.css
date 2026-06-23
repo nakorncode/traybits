@@ -495,6 +495,13 @@ button {
   pointer-events: auto;
 }
 
+.toast-stage [data-sonner-toaster],
+.toast-stage [data-sonner-toast],
+.toast-stage [data-button],
+.toast-stage button {
+  pointer-events: auto;
+}
+
 .overlay-debug-card {
   display: grid;
   gap: 6px;
@@ -518,6 +525,13 @@ button {
 
 .overlay-debug-card .overlay-debug-error {
   color: #b42318;
+}
+
+.overlay-sonner-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
 }
 
 @media (max-width: 820px) {
