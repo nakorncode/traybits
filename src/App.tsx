@@ -13,6 +13,7 @@ import {
 import { A, Navigate, Route, Router, useLocation } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toaster, toast } from "solid-sonner";
 import "solid-sonner/styles.css";
@@ -785,9 +786,11 @@ function SettingsPanel(props: {
 function ToastOverlay() {
   const [toasts, setToasts] = createSignal<AppNotification[]>([]);
   const [settings, setSettings] = createSignal<AppSettings>();
+  const announcedIds = new Set<string>();
 
   onMount(async () => {
     await getCurrentWindow().setAlwaysOnTop(true);
+    const webview = getCurrentWebviewWindow();
 
     const [existing, appSettings] = await Promise.all([
       invoke<AppNotification[]>("get_notifications"),
@@ -796,22 +799,27 @@ function ToastOverlay() {
     setSettings(appSettings);
     setToasts(existing.filter((notification) => !notification.silent).slice(0, 4));
 
-    const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
-      if (event.payload.silent) return;
-      setToasts((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)].slice(0, 4));
+    const unlistenAdded = await webview.listen<AppNotification>("traybits://notification-added", (event) => {
+      addOverlayNotification(event.payload);
     });
-    const unlistenDismissed = await listen<string>("traybits://notification-dismissed", (event) => {
+    const unlistenGlobalAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
+      addOverlayNotification(event.payload);
+    });
+    const unlistenDismissed = await webview.listen<string>("traybits://notification-dismissed", (event) => {
       setToasts((items) => items.filter((toast) => toast.id !== event.payload));
       hideWhenEmpty();
     });
-    const unlistenCleared = await listen("traybits://notifications-cleared", () => {
+    const unlistenCleared = await webview.listen("traybits://notifications-cleared", () => {
       setToasts([]);
       hideWhenEmpty();
     });
-    const unlistenSettings = await listen<AppSettings>("traybits://settings-updated", (event) => {
+    const unlistenSettings = await webview.listen<AppSettings>("traybits://settings-updated", (event) => {
       setSettings(event.payload);
     });
-    const unlistenLegacy = await listen<ToastPayload>("traybits://toast", (event) => {
+    const unlistenGlobalSettings = await listen<AppSettings>("traybits://settings-updated", (event) => {
+      setSettings(event.payload);
+    });
+    const unlistenLegacy = await webview.listen<ToastPayload>("traybits://toast", (event) => {
       const payload = event.payload;
       const notification: AppNotification = {
         id: `legacy-${payload.id}`,
@@ -822,17 +830,58 @@ function ToastOverlay() {
         createdAt: String(Date.now()),
         tone: payload.tone,
       };
-      setToasts((items) => [notification, ...items].slice(0, 4));
+      addOverlayNotification(notification);
     });
+    const poll = window.setInterval(syncOverlayNotifications, 1500);
 
     onCleanup(() => {
       unlistenAdded();
+      unlistenGlobalAdded();
       unlistenDismissed();
       unlistenCleared();
       unlistenSettings();
+      unlistenGlobalSettings();
       unlistenLegacy();
+      window.clearInterval(poll);
     });
   });
+
+  async function syncOverlayNotifications() {
+    try {
+      const latest = await invoke<AppNotification[]>("get_notifications");
+      const visible = latest.filter((notification) => !notification.silent).slice(0, 4);
+      setToasts((current) => {
+        const known = new Set(current.map((notification) => notification.id));
+        for (const notification of visible) {
+          if (!known.has(notification.id)) {
+            showOverlaySonner(notification);
+          }
+        }
+        return visible;
+      });
+    } catch {
+      // Polling is only a fallback for missed events.
+    }
+  }
+
+  function addOverlayNotification(notification: AppNotification) {
+    if (notification.silent) return;
+    setToasts((items) => [
+      notification,
+      ...items.filter((item) => item.id !== notification.id),
+    ].slice(0, 4));
+    showOverlaySonner(notification);
+  }
+
+  function showOverlaySonner(notification: AppNotification) {
+    if (announcedIds.has(notification.id)) return;
+    announcedIds.add(notification.id);
+    toast.info(notification.title, {
+      toasterId: "overlay",
+      description: `${notification.source}: ${notification.body}`,
+      duration: 8000,
+    });
+  }
 
   function dismiss(id: string) {
     invoke("dismiss_notification", { id }).catch(() => undefined);
@@ -859,6 +908,14 @@ function ToastOverlay() {
           <span>Transparent overlay window is visible.</span>
         </div>
       </Show>
+      <Toaster
+        id="overlay"
+        position="top-right"
+        richColors
+        closeButton
+        expand
+        visibleToasts={4}
+      />
       <For each={toasts()}>
         {(toast) => (
           <article class={`toast-card tone-${toast.tone}`}>

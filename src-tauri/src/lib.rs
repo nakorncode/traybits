@@ -532,13 +532,7 @@ fn apply_runtime_settings(app: &AppHandle, settings: &AppSettings) -> Result<(),
 fn sync_overlay_debug_visibility(app: &AppHandle, settings: &AppSettings) {
     if settings.notification_overlay_debug_visible {
         let _ = show_toast_window(app);
-    } else if app
-        .state::<AppState>()
-        .notifications
-        .lock()
-        .map(|notifications| notifications.is_empty())
-        .unwrap_or(false)
-    {
+    } else {
         let _ = hide_toast_overlay(app.clone());
     }
 }
