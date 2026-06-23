@@ -198,6 +198,13 @@ function formatTimestamp(createdAt: string) {
   return new Date(millis).toLocaleString();
 }
 
+function formatDuration(millis: number) {
+  const totalSeconds = Math.max(0, Math.floor(millis / 1_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes} min ${seconds.toString().padStart(2, "0")} sec`;
+}
+
 function App() {
   const params = new URLSearchParams(window.location.search);
   const view = params.get("view");
@@ -699,7 +706,23 @@ function EyeRestPanel(props: {
     if (current.active) return "Rest reminder is active";
     if (!current.nextDueAt) return "Timer is preparing";
     const remaining = Math.max(0, current.nextDueAt - current.now);
-    return `${Math.ceil(remaining / 60_000)} min remaining`;
+    return `${formatDuration(remaining)} remaining`;
+  });
+
+  const elapsedText = createMemo(() => {
+    const current = status();
+    if (!current?.enabled || !current.nextDueAt) return "Not running";
+    if (current.active) return "Interval complete";
+    const intervalMillis = current.intervalMinutes * 60_000;
+    const remaining = Math.max(0, current.nextDueAt - current.now);
+    return formatDuration(Math.max(0, intervalMillis - remaining));
+  });
+
+  const remainingText = createMemo(() => {
+    const current = status();
+    if (!current?.enabled || !current.nextDueAt) return "Not running";
+    if (current.active) return "Rest reminder is active";
+    return formatDuration(Math.max(0, current.nextDueAt - current.now));
   });
 
   return (
@@ -757,6 +780,14 @@ function EyeRestPanel(props: {
           <strong>{nextDueText()}</strong>
         </div>
         <dl class="fact-list">
+          <div>
+            <dt>Elapsed</dt>
+            <dd>{elapsedText()}</dd>
+          </div>
+          <div>
+            <dt>Remaining</dt>
+            <dd>{remainingText()}</dd>
+          </div>
           <div>
             <dt>Rest duration</dt>
             <dd>20 seconds</dd>
