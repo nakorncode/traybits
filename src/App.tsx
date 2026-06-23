@@ -1,4 +1,15 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  type Accessor,
+  type ParentProps,
+  For,
+  Show,
+  createContext,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  useContext,
+} from "solid-js";
 import { A, Navigate, Route, Router, useLocation } from "@solidjs/router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -24,6 +35,7 @@ type AppNotification = {
   origin: "windows" | "demo";
   createdAt: string;
   tone: string;
+  silent?: boolean;
 };
 
 type NotificationListenerStatus = {
@@ -65,6 +77,22 @@ type AppSettings = {
     preserveCapsLockWith: CapsLockFallbackHotkey;
   };
 };
+
+type MainAppContextValue = {
+  listenerStatus: Accessor<NotificationListenerStatus | undefined>;
+  settings: Accessor<AppSettings | undefined>;
+  settingsError: Accessor<string | undefined>;
+  notifications: Accessor<AppNotification[]>;
+  captureStatus: Accessor<NotificationCaptureStatus | undefined>;
+  pushToast: (tone: string) => Promise<void>;
+  pushDemoNotification: () => Promise<void>;
+  dismissNotification: (id: string) => Promise<void>;
+  clearNotificationHistory: () => Promise<void>;
+  updateSettings: (patch: Partial<AppSettings>) => void;
+  updateCapsLockSettings: (patch: Partial<AppSettings["capsLockLanguageSwitch"]>) => void;
+};
+
+const MainAppContext = createContext<MainAppContextValue>();
 
 const tools: Array<{
   id: ToolId;
@@ -136,17 +164,31 @@ function App() {
   const view = params.get("view");
 
   if (view === "toast") {
+    document.documentElement.dataset.view = "toast";
     return <ToastOverlay />;
   }
 
+  delete document.documentElement.dataset.view;
   return (
-    <Router>
-      <MainApp />
+    <Router root={MainApp}>
+      <Route path="/" component={() => <Navigate href="/notifications" />} />
+      <Route path="/notifications" component={PersistentNotificationsRoute} />
+      <Route path="/eye-rest" component={EyeRestRoute} />
+      <Route path="/caps-lock-language-switch" component={CapsLockLanguageSwitchRoute} />
+      <Route path="/settings" component={SettingsRoute} />
     </Router>
   );
 }
 
-function MainApp() {
+function useMainApp() {
+  const context = useContext(MainAppContext);
+  if (!context) {
+    throw new Error("MainApp context is missing.");
+  }
+  return context;
+}
+
+function MainApp(props: ParentProps) {
   const location = useLocation();
   const [listenerStatus, setListenerStatus] = createSignal<NotificationListenerStatus>();
   const [settings, setSettings] = createSignal<AppSettings>();
@@ -240,88 +282,107 @@ function MainApp() {
     });
   }
 
+  const context: MainAppContextValue = {
+    listenerStatus,
+    settings,
+    settingsError,
+    notifications,
+    captureStatus,
+    pushToast,
+    pushDemoNotification,
+    dismissNotification,
+    clearNotificationHistory,
+    updateSettings,
+    updateCapsLockSettings,
+  };
+
   return (
-    <main class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">TB</div>
-          <div>
-            <strong>TrayBits</strong>
-            <span>Windows utilities</span>
+    <MainAppContext.Provider value={context}>
+      <main class="app-shell">
+        <aside class="sidebar">
+          <div class="brand">
+            <div class="brand-mark">TB</div>
+            <div>
+              <strong>TrayBits</strong>
+              <span>Windows utilities</span>
+            </div>
           </div>
-        </div>
 
-        <nav class="tool-nav" aria-label="Utilities">
-          <For each={tools}>
-            {(tool) => (
-              <A
-                activeClass="selected"
-                href={tool.path}
-                end
-              >
-                <span class="nav-glyph">{tool.glyph}</span>
-                <span>
-                  <strong>{tool.name}</strong>
-                  <small>{tool.status}</small>
-                </span>
-              </A>
-            )}
-          </For>
-        </nav>
-      </aside>
+          <nav class="tool-nav" aria-label="Utilities">
+            <For each={tools}>
+              {(tool) => (
+                <A activeClass="selected" href={tool.path} end>
+                  <span class="nav-glyph">{tool.glyph}</span>
+                  <span>
+                    <strong>{tool.name}</strong>
+                    <small>{tool.status}</small>
+                  </span>
+                </A>
+              )}
+            </For>
+          </nav>
+        </aside>
 
-      <section class="workspace">
-        <header class="topbar">
-          <div>
-            <h1>{active().name}</h1>
-            <p>{active().description}</p>
-          </div>
-          <button class="quiet-button" type="button" onClick={pushDemoNotification}>
-            Preview notification
-          </button>
-        </header>
+        <section class="workspace">
+          <header class="topbar">
+            <div>
+              <h1>{active().name}</h1>
+              <p>{active().description}</p>
+            </div>
+            <button class="quiet-button" type="button" onClick={pushDemoNotification}>
+              Preview notification
+            </button>
+          </header>
 
-        <Route path="/" component={() => <Navigate href="/notifications" />} />
-        <Route
-          path="/notifications"
-          component={() => (
-            <PersistentNotificationsPanel
-              captureStatus={captureStatus()}
-              listenerStatus={listenerStatus()}
-              notifications={notifications()}
-              pushDemoNotification={pushDemoNotification}
-              clearNotifications={clearNotificationHistory}
-              dismissNotification={dismissNotification}
-              settings={settings()}
-              updateSettings={updateSettings}
-              settingsError={settingsError()}
-            />
-          )}
-        />
-        <Route path="/eye-rest" component={() => <EyeRestPanel pushToast={pushToast} />} />
-        <Route
-          path="/caps-lock-language-switch"
-          component={() => (
-            <CapsLockLanguageSwitchPanel
-              pushToast={pushToast}
-              settings={settings()?.capsLockLanguageSwitch}
-              updateSettings={updateCapsLockSettings}
-              settingsError={settingsError()}
-            />
-          )}
-        />
-        <Route
-          path="/settings"
-          component={() => (
-            <SettingsPanel
-              settings={settings()}
-              updateSettings={updateSettings}
-              settingsError={settingsError()}
-            />
-          )}
-        />
-      </section>
-    </main>
+          {props.children}
+        </section>
+      </main>
+    </MainAppContext.Provider>
+  );
+}
+
+function PersistentNotificationsRoute() {
+  const app = useMainApp();
+  return (
+    <PersistentNotificationsPanel
+      captureStatus={app.captureStatus()}
+      listenerStatus={app.listenerStatus()}
+      notifications={app.notifications()}
+      pushDemoNotification={app.pushDemoNotification}
+      clearNotifications={app.clearNotificationHistory}
+      dismissNotification={app.dismissNotification}
+      settings={app.settings()}
+      updateSettings={app.updateSettings}
+      settingsError={app.settingsError()}
+    />
+  );
+}
+
+function EyeRestRoute() {
+  const app = useMainApp();
+  return <EyeRestPanel pushToast={app.pushToast} />;
+}
+
+function CapsLockLanguageSwitchRoute() {
+  const app = useMainApp();
+  return (
+    <CapsLockLanguageSwitchPanel
+      pushToast={app.pushToast}
+      settings={app.settings()?.capsLockLanguageSwitch}
+      updateSettings={app.updateCapsLockSettings}
+      settingsError={app.settingsError()}
+    />
+  );
+}
+
+function SettingsRoute() {
+  const app = useMainApp();
+  return (
+    <SettingsPanel
+      settings={app.settings()}
+      updateSettings={app.updateSettings}
+      settingsError={app.settingsError()}
+    />
   );
 }
 
@@ -607,9 +668,10 @@ function ToastOverlay() {
     await getCurrentWindow().setAlwaysOnTop(true);
 
     const existing = await invoke<AppNotification[]>("get_notifications");
-    setToasts(existing.slice(0, 4));
+    setToasts(existing.filter((notification) => !notification.silent).slice(0, 4));
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
+      if (event.payload.silent) return;
       setToasts((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)].slice(0, 4));
     });
     const unlistenDismissed = await listen<string>("traybits://notification-dismissed", (event) => {

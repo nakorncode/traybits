@@ -42,6 +42,7 @@ struct AppNotification {
     origin: NotificationOrigin,
     created_at: String,
     tone: String,
+    silent: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -112,7 +113,7 @@ struct AppState {
     settings: Mutex<AppSettings>,
     notifications: Mutex<Vec<AppNotification>>,
     notification_capture_status: Mutex<NotificationCaptureStatus>,
-    captured_windows_notification_ids: Mutex<HashSet<u32>>,
+    captured_windows_notification_keys: Mutex<HashSet<String>>,
 }
 
 fn default_notification_overlay_placement() -> OverlayPlacement {
@@ -215,9 +216,10 @@ fn push_demo_notification(
         origin: NotificationOrigin::Demo,
         created_at: now_timestamp(),
         tone: "windows".into(),
+        silent: false,
     };
 
-    add_notification(&app, state.inner(), notification.clone())?;
+    add_notification(&app, state.inner(), notification.clone(), true, true)?;
     Ok(notification)
 }
 
@@ -276,6 +278,8 @@ fn add_notification(
     app: &AppHandle,
     state: &AppState,
     notification: AppNotification,
+    show_overlay: bool,
+    play_sound: bool,
 ) -> Result<(), String> {
     {
         let mut notifications = state
@@ -286,8 +290,12 @@ fn add_notification(
         notifications.truncate(100);
     }
 
-    let _ = show_toast_window(app);
-    notification_sound::play(app);
+    if show_overlay {
+        let _ = show_toast_window(app);
+    }
+    if play_sound {
+        notification_sound::play(app);
+    }
     app.emit("traybits://notification-added", notification)
         .map_err(|error| error.to_string())
 }
@@ -746,8 +754,10 @@ mod notification_capture {
             "polling",
         );
 
+        let mut initial_sync = true;
         loop {
-            capture_current_notifications(&app, state.inner(), &listener);
+            capture_current_notifications(&app, state.inner(), &listener, initial_sync);
+            initial_sync = false;
             thread::sleep(Duration::from_millis(750));
         }
     }
@@ -756,6 +766,7 @@ mod notification_capture {
         app: &AppHandle,
         state: &AppState,
         listener: &UserNotificationListener,
+        initial_sync: bool,
     ) {
         let notifications = match listener
             .GetNotificationsAsync(NotificationKinds::Toast)
@@ -786,23 +797,38 @@ mod notification_capture {
                 continue;
             };
 
+            let Some(mut app_notification) = extract_notification(notification_id, &notification)
+            else {
+                continue;
+            };
+            app_notification.silent = initial_sync;
+            let dedupe_key = notification_dedupe_key(&app_notification);
             let already_seen = {
-                let Ok(mut captured_ids) = state.captured_windows_notification_ids.lock() else {
+                let Ok(mut captured_keys) = state.captured_windows_notification_keys.lock() else {
                     continue;
                 };
-                !captured_ids.insert(notification_id)
+                !captured_keys.insert(dedupe_key)
             };
 
             if already_seen {
                 continue;
             }
 
-            let Some(app_notification) = extract_notification(notification_id, &notification)
-            else {
-                continue;
-            };
-            let _ = add_notification(app, state, app_notification);
+            let _ = add_notification(app, state, app_notification, !initial_sync, !initial_sync);
         }
+    }
+
+    fn notification_dedupe_key(notification: &AppNotification) -> String {
+        format!(
+            "{}|{}|{}|{}",
+            notification
+                .source_app_user_model_id
+                .as_deref()
+                .unwrap_or(""),
+            notification.source,
+            notification.title,
+            notification.body
+        )
     }
 
     fn extract_notification(id: u32, notification: &UserNotification) -> Option<AppNotification> {
@@ -828,6 +854,7 @@ mod notification_capture {
             origin: NotificationOrigin::Windows,
             created_at: now_timestamp(),
             tone: "windows".into(),
+            silent: false,
         })
     }
 
@@ -1128,7 +1155,7 @@ pub fn run() {
                 settings: Mutex::new(settings.clone()),
                 notifications: Mutex::new(Vec::new()),
                 notification_capture_status: Mutex::new(NotificationCaptureStatus::default()),
-                captured_windows_notification_ids: Mutex::new(HashSet::new()),
+                captured_windows_notification_keys: Mutex::new(HashSet::new()),
             });
             apply_runtime_settings(app.handle(), &settings)?;
             keyboard::apply_settings(&settings.caps_lock_language_switch);

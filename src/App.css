@@ -17,6 +17,11 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-view="toast"],
+:root[data-view="toast"] body {
+  background: transparent;
+}
+
 * {
   box-sizing: border-box;
 }
