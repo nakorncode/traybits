@@ -41,7 +41,6 @@ export function LanguageIndicatorOverlay() {
             }}
           >
             <strong>{item().code}</strong>
-            <span>{item().label}</span>
           </section>
         )}
       </Show>

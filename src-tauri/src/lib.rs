@@ -2206,6 +2206,7 @@ mod language_indicator {
 
     static SETTINGS: OnceLock<Mutex<IndicatorSettings>> = OnceLock::new();
     static MONITOR_STARTED: OnceLock<()> = OnceLock::new();
+    const LANGUAGE_INDICATOR_POLL_MS: u64 = 75;
 
     pub fn apply_settings(app: &AppHandle, settings: &CurrentLanguageIndicatorSettings) {
         let _ = SETTINGS.set(Mutex::new(IndicatorSettings::default()));
@@ -2271,7 +2272,7 @@ mod language_indicator {
                             }
                         }
                     }
-                    thread::sleep(Duration::from_millis(250));
+                    thread::sleep(Duration::from_millis(LANGUAGE_INDICATOR_POLL_MS));
                 }
             });
         });
@@ -2297,8 +2298,8 @@ mod language_indicator {
             caret_available: snapshot.caret_available,
         };
 
-        let width = 92;
-        let height = 44;
+        let width = 48;
+        let height = 30;
         window
             .set_size(tauri::PhysicalSize::new(width, height))
             .map_err(|error| error.to_string())?;
