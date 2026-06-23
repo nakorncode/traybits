@@ -226,7 +226,7 @@ fn create_tray_icon(app: &AppHandle) -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
 
-    TrayIconBuilder::with_id(TRAY_ID)
+    let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("TrayBits")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -246,8 +246,13 @@ fn create_tray_icon(app: &AppHandle) -> Result<(), String> {
             {
                 show_main_window(tray.app_handle());
             }
-        })
-        .build(app)
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+
+    tray.build(app)
         .map(|_| ())
         .map_err(|error| error.to_string())
 }
@@ -382,17 +387,19 @@ mod keyboard {
         Foundation::{LPARAM, LRESULT, WPARAM},
         UI::{
             Input::KeyboardAndMouse::{
-                GetAsyncKeyState, VK_CAPITAL, VK_CONTROL, VK_MENU, VK_SHIFT,
+                keybd_event, GetAsyncKeyState, GetKeyState, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
+                VK_CAPITAL, VK_CONTROL, VK_MENU, VK_SHIFT,
             },
             WindowsAndMessaging::{
-                CallNextHookEx, DispatchMessageW, GetMessageW, PostMessageW, SetWindowsHookExW,
-                TranslateMessage, HC_ACTION, HHOOK, HWND_BROADCAST, KBDLLHOOKSTRUCT, MSG,
+                CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, PostMessageW,
+                SetWindowsHookExW, TranslateMessage, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG,
                 WH_KEYBOARD_LL, WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_SYSKEYDOWN,
             },
         },
     };
 
     const HKL_NEXT: isize = 1;
+    const INPUTLANGCHANGE_FORWARD: usize = 2;
 
     #[derive(Clone, Copy)]
     struct HookSettings {
@@ -458,10 +465,14 @@ mod keyboard {
         }
 
         if preserve_combo_pressed(settings.preserve_caps_lock_with) {
-            return CallNextHookEx(None, code, wparam, lparam);
+            if is_keydown_message(wparam) {
+                toggle_caps_lock();
+            }
+            return LRESULT(1);
         }
 
-        if wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize {
+        if is_keydown_message(wparam) {
+            force_caps_lock_off();
             switch_input_language();
         }
 
@@ -486,15 +497,44 @@ mod keyboard {
         unsafe { GetAsyncKeyState(vkey) < 0 }
     }
 
+    fn is_keydown_message(wparam: WPARAM) -> bool {
+        wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize
+    }
+
+    fn is_caps_lock_on() -> bool {
+        unsafe { GetKeyState(VK_CAPITAL.0 as i32) & 1 != 0 }
+    }
+
+    fn force_caps_lock_off() {
+        if is_caps_lock_on() {
+            toggle_caps_lock();
+        }
+    }
+
+    fn toggle_caps_lock() {
+        unsafe {
+            keybd_event(VK_CAPITAL.0 as u8, 0x45, KEYEVENTF_EXTENDEDKEY, 0);
+            keybd_event(
+                VK_CAPITAL.0 as u8,
+                0x45,
+                KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,
+                0,
+            );
+        }
+    }
+
     fn switch_input_language() {
-        let _ = unsafe {
-            PostMessageW(
-                Some(HWND_BROADCAST),
-                WM_INPUTLANGCHANGEREQUEST,
-                WPARAM(0),
-                LPARAM(HKL_NEXT),
-            )
-        };
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if !foreground_window.is_invalid() {
+            let _ = unsafe {
+                PostMessageW(
+                    Some(foreground_window),
+                    WM_INPUTLANGCHANGEREQUEST,
+                    WPARAM(INPUTLANGCHANGE_FORWARD),
+                    LPARAM(HKL_NEXT),
+                )
+            };
+        }
     }
 }
 

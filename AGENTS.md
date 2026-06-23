@@ -107,5 +107,8 @@ Caps Lock language switching should stay Rust-owned:
 
 - Low-level keyboard hook or a safer Windows-native alternative.
 - Explicit handling for real Caps Lock on/off behavior.
+- Switch input language like the standalone CapsLang app: post
+  `WM_INPUTLANGCHANGEREQUEST` with `INPUTLANGCHANGE_FORWARD` and `HKL_NEXT` to
+  the foreground window, not `HWND_BROADCAST`, and do not simulate `Win+Space`.
 - No broad keystroke logging.
 - UI only controls settings and displays state.
