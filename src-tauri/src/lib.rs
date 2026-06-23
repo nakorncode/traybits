@@ -5,6 +5,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent,
 };
+use tauri_plugin_notification::NotificationExt;
 
 const TRAY_ID: &str = "main";
 const SETTINGS_FILE: &str = "settings.json";
@@ -210,7 +211,7 @@ fn push_demo_notification(
     let notification = AppNotification {
         id: format!("demo-{}", monotonic_millis()),
         title: "Demo notification".into(),
-        body: "TrayBits rendered this persistent notification through the shared store.".into(),
+        body: "TrayBits sent this native Windows notification and mirrored it into the persistent overlay.".into(),
         source: "TrayBits".into(),
         source_app_user_model_id: None,
         origin: NotificationOrigin::Demo,
@@ -219,6 +220,8 @@ fn push_demo_notification(
         silent: false,
     };
 
+    show_native_notification(&app, &notification)?;
+    mark_notification_seen(state.inner(), &notification);
     add_notification(&app, state.inner(), notification.clone(), true, true)?;
     Ok(notification)
 }
@@ -296,8 +299,35 @@ fn add_notification(
     if play_sound {
         notification_sound::play(app);
     }
-    app.emit("traybits://notification-added", notification)
-        .map_err(|error| error.to_string())
+    app.emit("traybits://notification-added", notification.clone())
+        .map_err(|error| error.to_string())?;
+    if show_overlay {
+        app.emit_to("toast", "traybits://notification-added", notification)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn show_native_notification(app: &AppHandle, notification: &AppNotification) -> Result<(), String> {
+    app.notification()
+        .builder()
+        .title(notification.title.clone())
+        .body(notification.body.clone())
+        .show()
+        .map_err(|error| format!("Could not send Windows notification: {error}"))
+}
+
+fn mark_notification_seen(state: &AppState, notification: &AppNotification) {
+    if let Ok(mut captured_keys) = state.captured_windows_notification_keys.lock() {
+        captured_keys.insert(notification_dedupe_key(notification));
+    }
+}
+
+fn notification_dedupe_key(notification: &AppNotification) -> String {
+    format!(
+        "{}|{}|{}",
+        notification.source, notification.title, notification.body
+    )
 }
 
 fn dismiss_notification_by_id(app: &AppHandle, state: &AppState, id: &str) -> Result<(), String> {
@@ -670,8 +700,8 @@ fn set_notification_capture_status(
 #[cfg(target_os = "windows")]
 mod notification_capture {
     use super::{
-        add_notification, now_timestamp, set_notification_capture_status, AppHandle,
-        AppNotification, AppState, NotificationOrigin,
+        add_notification, notification_dedupe_key, now_timestamp, set_notification_capture_status,
+        AppHandle, AppNotification, AppState, NotificationOrigin,
     };
     use std::{thread, time::Duration};
     use tauri::Manager;
@@ -816,19 +846,6 @@ mod notification_capture {
 
             let _ = add_notification(app, state, app_notification, !initial_sync, !initial_sync);
         }
-    }
-
-    fn notification_dedupe_key(notification: &AppNotification) -> String {
-        format!(
-            "{}|{}|{}|{}",
-            notification
-                .source_app_user_model_id
-                .as_deref()
-                .unwrap_or(""),
-            notification.source,
-            notification.title,
-            notification.body
-        )
     }
 
     fn extract_notification(id: u32, notification: &UserNotification) -> Option<AppNotification> {
@@ -1149,6 +1166,7 @@ mod keyboard {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let settings = load_settings(app.handle());
             app.manage(AppState {

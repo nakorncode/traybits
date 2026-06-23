@@ -82,6 +82,7 @@ type MainAppContextValue = {
   listenerStatus: Accessor<NotificationListenerStatus | undefined>;
   settings: Accessor<AppSettings | undefined>;
   settingsError: Accessor<string | undefined>;
+  notificationError: Accessor<string | undefined>;
   notifications: Accessor<AppNotification[]>;
   captureStatus: Accessor<NotificationCaptureStatus | undefined>;
   pushToast: (tone: string) => Promise<void>;
@@ -193,6 +194,7 @@ function MainApp(props: ParentProps) {
   const [listenerStatus, setListenerStatus] = createSignal<NotificationListenerStatus>();
   const [settings, setSettings] = createSignal<AppSettings>();
   const [settingsError, setSettingsError] = createSignal<string>();
+  const [notificationError, setNotificationError] = createSignal<string>();
   const [notifications, setNotifications] = createSignal<AppNotification[]>([]);
   const [captureStatus, setCaptureStatus] = createSignal<NotificationCaptureStatus>();
 
@@ -235,9 +237,14 @@ function MainApp(props: ParentProps) {
   }
 
   async function pushDemoNotification() {
-    const notification = await invoke<AppNotification>("push_demo_notification");
-    setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)]);
-    await refreshCaptureStatus();
+    setNotificationError(undefined);
+    try {
+      const notification = await invoke<AppNotification>("push_demo_notification");
+      setNotifications((items) => [notification, ...items.filter((item) => item.id !== notification.id)]);
+      await refreshCaptureStatus();
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function dismissNotification(id: string) {
@@ -286,6 +293,7 @@ function MainApp(props: ParentProps) {
     listenerStatus,
     settings,
     settingsError,
+    notificationError,
     notifications,
     captureStatus,
     pushToast,
@@ -354,6 +362,7 @@ function PersistentNotificationsRoute() {
       settings={app.settings()}
       updateSettings={app.updateSettings}
       settingsError={app.settingsError()}
+      notificationError={app.notificationError()}
     />
   );
 }
@@ -396,6 +405,7 @@ function PersistentNotificationsPanel(props: {
   settings?: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
   settingsError?: string;
+  notificationError?: string;
 }) {
   return (
     <div class="content-grid">
@@ -458,6 +468,9 @@ function PersistentNotificationsPanel(props: {
         </div>
         <Show when={props.settingsError}>
           <p class="error-text">{props.settingsError}</p>
+        </Show>
+        <Show when={props.notificationError}>
+          <p class="error-text">{props.notificationError}</p>
         </Show>
       </section>
 
