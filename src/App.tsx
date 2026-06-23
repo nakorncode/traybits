@@ -725,19 +725,25 @@ function EyeRestPanel(props: {
           </label>
           <label class="field-row">
             <span>Reminder interval</span>
-            <input
-              type="number"
-              min="1"
-              max="240"
-              step="1"
-              value={props.settings?.intervalMinutes ?? 20}
-              disabled={!props.settings}
-              onChange={(event) =>
-                props.updateSettings({
-                  intervalMinutes: Math.max(1, Math.min(240, Number(event.currentTarget.value) || 20)),
-                })
-              }
-            />
+            <div class="inline-input-row">
+              <input
+                type="number"
+                min="1"
+                max="240"
+                step="1"
+                value={props.settings?.intervalMinutes ?? 20}
+                disabled={!props.settings}
+                onChange={(event) =>
+                  props.updateSettings({
+                    intervalMinutes: Math.max(
+                      1,
+                      Math.min(240, Number(event.currentTarget.value) || 20),
+                    ),
+                  })
+                }
+              />
+              <span>minutes</span>
+            </div>
           </label>
         </div>
         <Show when={props.settingsError}>

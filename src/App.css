@@ -329,7 +329,8 @@ button {
   font-size: 14px;
 }
 
-.settings-list input {
+.settings-list input[type="checkbox"],
+.settings-list input[type="radio"] {
   width: 16px;
   height: 16px;
 }
@@ -346,7 +347,8 @@ button {
   font-weight: 600;
 }
 
-.field-row select {
+.field-row select,
+.field-row input[type="number"] {
   min-width: 230px;
   min-height: 34px;
   padding: 6px 9px;
@@ -355,6 +357,23 @@ button {
   color: #1f2937;
   background: #ffffff;
   font-size: 13px;
+}
+
+.field-row input[type="number"] {
+  width: 120px;
+  min-width: 120px;
+}
+
+.inline-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-input-row span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .hint-text,
