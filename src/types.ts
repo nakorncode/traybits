@@ -110,6 +110,7 @@ export type LanguageIndicatorPayload = {
   localeName: string;
   mode: CurrentLanguageIndicatorMode;
   size: CurrentLanguageIndicatorSize;
+  boundsVisible: boolean;
   x: number;
   y: number;
   caretAvailable: boolean;
@@ -141,6 +142,7 @@ export type AppSettings = {
     mode: CurrentLanguageIndicatorMode;
     placement: OverlayPlacement;
     size: CurrentLanguageIndicatorSize;
+    boundsVisible: boolean;
   };
 };
 

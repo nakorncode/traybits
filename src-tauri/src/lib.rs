@@ -386,6 +386,7 @@ struct LanguageIndicatorPayload {
     locale_name: String,
     mode: CurrentLanguageIndicatorMode,
     size: CurrentLanguageIndicatorSize,
+    bounds_visible: bool,
     x: i32,
     y: i32,
     caret_available: bool,
@@ -461,6 +462,8 @@ struct CurrentLanguageIndicatorSettings {
     placement: OverlayPlacement,
     #[serde(default = "default_current_language_indicator_size")]
     size: CurrentLanguageIndicatorSize,
+    #[serde(default = "default_current_language_indicator_bounds_visible")]
+    bounds_visible: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -595,6 +598,10 @@ fn default_current_language_indicator_size() -> CurrentLanguageIndicatorSize {
     CurrentLanguageIndicatorSize::Medium
 }
 
+fn default_current_language_indicator_bounds_visible() -> bool {
+    false
+}
+
 impl Default for EyeRestReminderSettings {
     fn default() -> Self {
         Self {
@@ -620,6 +627,7 @@ impl Default for CurrentLanguageIndicatorSettings {
             mode: default_current_language_indicator_mode(),
             placement: default_current_language_indicator_placement(),
             size: default_current_language_indicator_size(),
+            bounds_visible: default_current_language_indicator_bounds_visible(),
         }
     }
 }
@@ -2261,6 +2269,7 @@ mod language_indicator {
         mode: CurrentLanguageIndicatorMode,
         placement: OverlayPlacement,
         size: CurrentLanguageIndicatorSize,
+        bounds_visible: bool,
     }
 
     impl Default for IndicatorSettings {
@@ -2270,6 +2279,7 @@ mod language_indicator {
                 mode: CurrentLanguageIndicatorMode::ScreenCorner,
                 placement: OverlayPlacement::TopRight,
                 size: CurrentLanguageIndicatorSize::Medium,
+                bounds_visible: false,
             }
         }
     }
@@ -2279,6 +2289,7 @@ mod language_indicator {
         language: InputLanguageInfo,
         mode: CurrentLanguageIndicatorMode,
         size: CurrentLanguageIndicatorSize,
+        bounds_visible: bool,
         x: i32,
         y: i32,
         caret_available: bool,
@@ -2297,6 +2308,7 @@ mod language_indicator {
                 current.mode = settings.mode;
                 current.placement = settings.placement;
                 current.size = settings.size;
+                current.bounds_visible = settings.bounds_visible;
             }
         }
 
@@ -2384,6 +2396,7 @@ mod language_indicator {
             locale_name: snapshot.language.locale_name.clone(),
             mode: snapshot.mode,
             size: snapshot.size,
+            bounds_visible: snapshot.bounds_visible,
             x: snapshot.x,
             y: snapshot.y,
             caret_available: snapshot.caret_available,
@@ -2450,12 +2463,19 @@ mod language_indicator {
         };
         Some(IndicatorSnapshot {
             signature: format!(
-                "{}:{:?}:{:?}:{}:{}:{}",
-                language.id, settings.mode, settings.size, position.source, position.x, position.y
+                "{}:{:?}:{:?}:{}:{}:{}:{}",
+                language.id,
+                settings.mode,
+                settings.size,
+                settings.bounds_visible,
+                position.source,
+                position.x,
+                position.y
             ),
             language,
             mode: settings.mode,
             size: settings.size,
+            bounds_visible: settings.bounds_visible,
             x: position.x,
             y: position.y,
             caret_available: position.caret_available,
@@ -2521,9 +2541,9 @@ mod language_indicator {
 
     fn indicator_window_size(size: CurrentLanguageIndicatorSize) -> (i32, i32) {
         match size {
-            CurrentLanguageIndicatorSize::Small => (54, 34),
-            CurrentLanguageIndicatorSize::Medium => (68, 42),
-            CurrentLanguageIndicatorSize::Large => (86, 54),
+            CurrentLanguageIndicatorSize::Small => (78, 58),
+            CurrentLanguageIndicatorSize::Medium => (96, 70),
+            CurrentLanguageIndicatorSize::Large => (122, 90),
         }
     }
 

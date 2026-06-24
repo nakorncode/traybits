@@ -269,6 +269,7 @@ export function CurrentLanguageIndicatorRoute() {
             mode: app.settings()?.currentLanguageIndicator.mode ?? "screenCorner",
             placement: app.settings()?.currentLanguageIndicator.placement ?? "topRight",
             size: app.settings()?.currentLanguageIndicator.size ?? "medium",
+            boundsVisible: app.settings()?.currentLanguageIndicator.boundsVisible ?? false,
             ...patch,
           },
         })

@@ -115,6 +115,15 @@ export function CurrentLanguageIndicatorPanel(props: {
               </For>
             </div>
           </div>
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={props.settings?.boundsVisible ?? false}
+              disabled={!props.settings}
+              onChange={(event) => props.updateSettings({ boundsVisible: event.currentTarget.checked })}
+            />
+            Show indicator overlay bounds
+          </label>
           <button class="quiet-button" type="button" onClick={previewIndicator}>
             Preview indicator
           </button>

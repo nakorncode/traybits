@@ -31,7 +31,12 @@ export function LanguageIndicatorOverlay() {
   });
 
   return (
-    <main class="language-indicator-stage">
+    <main
+      class="language-indicator-stage"
+      classList={{
+        "bounds-overlay": payload()?.boundsVisible ?? false,
+      }}
+    >
       <Show when={payload()}>
         {(item) => (
           <section
