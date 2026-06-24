@@ -1,5 +1,6 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { overlayPlacements } from "../constants";
 import type { AppSettings, CurrentLanguageIndicatorMode, CurrentLanguageIndicatorStatus } from "../types";
 
 export function CurrentLanguageIndicatorPanel(props: {
@@ -68,6 +69,24 @@ export function CurrentLanguageIndicatorPanel(props: {
               <option value="caretOverlay">Caret overlay (experimental)</option>
             </select>
           </label>
+          <div>
+            <span class="field-label">Corner placement</span>
+            <div class="placement-grid" role="group" aria-label="Language indicator placement">
+              <For each={overlayPlacements}>
+                {(placement) => (
+                  <button
+                    type="button"
+                    disabled={!props.settings || props.settings.mode === "caretOverlay"}
+                    classList={{ selected: (props.settings?.placement ?? "topRight") === placement.id }}
+                    title={placement.label}
+                    onClick={() => props.updateSettings({ placement: placement.id })}
+                  >
+                    {placement.shortLabel}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
           <button class="quiet-button" type="button" onClick={previewIndicator}>
             Preview indicator
           </button>

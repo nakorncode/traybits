@@ -37,10 +37,14 @@ export function LanguageIndicatorOverlay() {
           <section
             classList={{
               "language-indicator-card": true,
+              "corner-badge": item().mode !== "caretOverlay",
               fallback: !item().caretAvailable,
             }}
           >
             <strong>{item().code}</strong>
+            <Show when={item().mode !== "caretOverlay"}>
+              <span>{item().label}</span>
+            </Show>
           </section>
         )}
       </Show>

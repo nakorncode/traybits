@@ -384,6 +384,7 @@ struct LanguageIndicatorPayload {
     code: String,
     label: String,
     locale_name: String,
+    mode: CurrentLanguageIndicatorMode,
     x: i32,
     y: i32,
     caret_available: bool,
@@ -426,7 +427,7 @@ enum CloseBehavior {
     Exit,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 enum OverlayPlacement {
     TopLeft,
@@ -453,6 +454,8 @@ struct CurrentLanguageIndicatorSettings {
     enabled: bool,
     #[serde(default = "default_current_language_indicator_mode")]
     mode: CurrentLanguageIndicatorMode,
+    #[serde(default = "default_current_language_indicator_placement")]
+    placement: OverlayPlacement,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -571,6 +574,10 @@ fn default_current_language_indicator_mode() -> CurrentLanguageIndicatorMode {
     CurrentLanguageIndicatorMode::ScreenCorner
 }
 
+fn default_current_language_indicator_placement() -> OverlayPlacement {
+    OverlayPlacement::TopRight
+}
+
 impl Default for EyeRestReminderSettings {
     fn default() -> Self {
         Self {
@@ -585,6 +592,7 @@ impl Default for CurrentLanguageIndicatorSettings {
         Self {
             enabled: false,
             mode: default_current_language_indicator_mode(),
+            placement: default_current_language_indicator_placement(),
         }
     }
 }
@@ -2179,9 +2187,9 @@ mod notification_capture {
 #[cfg(target_os = "windows")]
 mod language_indicator {
     use super::{
-        CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorMode,
+        overlay_position, CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorMode,
         CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
-        LanguageIndicatorPayload,
+        LanguageIndicatorPayload, OverlayPlacement,
     };
     use std::{
         sync::{Mutex, OnceLock},
@@ -2229,6 +2237,7 @@ mod language_indicator {
     struct IndicatorSettings {
         enabled: bool,
         mode: CurrentLanguageIndicatorMode,
+        placement: OverlayPlacement,
     }
 
     impl Default for IndicatorSettings {
@@ -2236,6 +2245,7 @@ mod language_indicator {
             Self {
                 enabled: false,
                 mode: CurrentLanguageIndicatorMode::ScreenCorner,
+                placement: OverlayPlacement::TopRight,
             }
         }
     }
@@ -2243,6 +2253,7 @@ mod language_indicator {
     #[derive(Clone)]
     struct IndicatorSnapshot {
         language: InputLanguageInfo,
+        mode: CurrentLanguageIndicatorMode,
         x: i32,
         y: i32,
         caret_available: bool,
@@ -2259,6 +2270,7 @@ mod language_indicator {
             if let Ok(mut current) = lock.lock() {
                 current.enabled = settings.enabled;
                 current.mode = settings.mode;
+                current.placement = settings.placement;
             }
         }
 
@@ -2272,7 +2284,8 @@ mod language_indicator {
     }
 
     pub fn status(enabled: bool) -> CurrentLanguageIndicatorStatus {
-        let mode = current_settings().mode;
+        let settings = current_settings();
+        let mode = settings.mode;
         let current = active_input_language();
         let caret_probe = caret_position_probe();
         let caret = caret_probe.position;
@@ -2303,7 +2316,7 @@ mod language_indicator {
 
     pub fn preview(app: &AppHandle) -> Result<(), String> {
         let settings = current_settings();
-        let snapshot = active_language_snapshot(app, settings.mode)
+        let snapshot = active_language_snapshot(app, settings)
             .ok_or_else(|| "Could not read the active input language.".to_string())?;
         show(app, &snapshot)
     }
@@ -2315,7 +2328,7 @@ mod language_indicator {
                 loop {
                     if current_settings().enabled {
                         let settings = current_settings();
-                        if let Some(snapshot) = active_language_snapshot(&app, settings.mode) {
+                        if let Some(snapshot) = active_language_snapshot(&app, settings) {
                             if snapshot.signature != last_signature {
                                 last_signature = snapshot.signature.clone();
                                 let _ = show(&app, &snapshot);
@@ -2343,16 +2356,15 @@ mod language_indicator {
             code: snapshot.language.display_code.clone(),
             label: snapshot.language.label.clone(),
             locale_name: snapshot.language.locale_name.clone(),
+            mode: snapshot.mode,
             x: snapshot.x,
             y: snapshot.y,
             caret_available: snapshot.caret_available,
         };
 
+        let (width, height) = indicator_window_size(snapshot.mode);
         window
-            .set_size(tauri::PhysicalSize::new(
-                INDICATOR_WINDOW_WIDTH as u32,
-                INDICATOR_WINDOW_HEIGHT as u32,
-            ))
+            .set_size(tauri::PhysicalSize::new(width as u32, height as u32))
             .map_err(|error| error.to_string())?;
         window
             .set_position(tauri::PhysicalPosition::new(snapshot.x, snapshot.y))
@@ -2396,40 +2408,58 @@ mod language_indicator {
 
     fn active_language_snapshot(
         app: &AppHandle,
-        mode: CurrentLanguageIndicatorMode,
+        settings: IndicatorSettings,
     ) -> Option<IndicatorSnapshot> {
         let language = active_input_language()?;
-        let position = match mode {
+        let position = match settings.mode {
             CurrentLanguageIndicatorMode::CaretOverlay => caret_position()?,
-            CurrentLanguageIndicatorMode::ScreenCorner => screen_corner_position(app)?,
+            CurrentLanguageIndicatorMode::ScreenCorner => {
+                screen_corner_position(app, settings.placement)?
+            }
             CurrentLanguageIndicatorMode::FocusedWindowCorner => {
-                focused_window_corner_position().or_else(|| screen_corner_position(app))?
+                focused_window_corner_position(settings.placement)
+                    .or_else(|| screen_corner_position(app, settings.placement))?
             }
         };
         Some(IndicatorSnapshot {
             signature: format!(
-                "{}:{}:{}:{}",
-                language.id, position.source, position.x, position.y
+                "{}:{:?}:{}:{}:{}",
+                language.id, settings.mode, position.source, position.x, position.y
             ),
             language,
+            mode: settings.mode,
             x: position.x,
             y: position.y,
             caret_available: position.caret_available,
         })
     }
 
-    fn screen_corner_position(app: &AppHandle) -> Option<IndicatorPosition> {
+    fn screen_corner_position(
+        app: &AppHandle,
+        placement: OverlayPlacement,
+    ) -> Option<IndicatorPosition> {
         let monitor = app.primary_monitor().ok().flatten()?;
         let work_area = monitor.work_area();
+        let (width, height) = indicator_window_size(CurrentLanguageIndicatorMode::ScreenCorner);
+        let (x, y) = overlay_position(
+            placement,
+            work_area.position.x as f64,
+            work_area.position.y as f64,
+            work_area.size.width as f64,
+            work_area.size.height as f64,
+            width as f64,
+            height as f64,
+            24.0,
+        );
         Some(IndicatorPosition {
-            x: work_area.position.x + work_area.size.width as i32 - INDICATOR_WINDOW_WIDTH - 24,
-            y: work_area.position.y + 24,
+            x: x.round() as i32,
+            y: y.round() as i32,
             caret_available: true,
             source: "Screen corner",
         })
     }
 
-    fn focused_window_corner_position() -> Option<IndicatorPosition> {
+    fn focused_window_corner_position(placement: OverlayPlacement) -> Option<IndicatorPosition> {
         let foreground_window = unsafe { GetForegroundWindow() };
         if foreground_window.is_invalid() {
             return None;
@@ -2438,12 +2468,34 @@ mod language_indicator {
         if unsafe { GetWindowRect(foreground_window, &mut rect) }.is_err() {
             return None;
         }
+        let (width, height) =
+            indicator_window_size(CurrentLanguageIndicatorMode::FocusedWindowCorner);
+        let (x, y) = overlay_position(
+            placement,
+            rect.left as f64,
+            rect.top as f64,
+            (rect.right - rect.left).max(width) as f64,
+            (rect.bottom - rect.top).max(height) as f64,
+            width as f64,
+            height as f64,
+            12.0,
+        );
         Some(IndicatorPosition {
-            x: rect.right - INDICATOR_WINDOW_WIDTH - 12,
-            y: rect.top + 12,
+            x: x.round() as i32,
+            y: y.round() as i32,
             caret_available: true,
             source: "Focused window corner",
         })
+    }
+
+    fn indicator_window_size(mode: CurrentLanguageIndicatorMode) -> (i32, i32) {
+        match mode {
+            CurrentLanguageIndicatorMode::CaretOverlay => {
+                (INDICATOR_WINDOW_WIDTH, INDICATOR_WINDOW_HEIGHT)
+            }
+            CurrentLanguageIndicatorMode::ScreenCorner
+            | CurrentLanguageIndicatorMode::FocusedWindowCorner => (116, 62),
+        }
     }
 
     fn active_input_language() -> Option<InputLanguageInfo> {

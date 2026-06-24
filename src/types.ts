@@ -106,6 +106,7 @@ export type LanguageIndicatorPayload = {
   code: string;
   label: string;
   localeName: string;
+  mode: CurrentLanguageIndicatorMode;
   x: number;
   y: number;
   caretAvailable: boolean;
@@ -135,6 +136,7 @@ export type AppSettings = {
   currentLanguageIndicator: {
     enabled: boolean;
     mode: CurrentLanguageIndicatorMode;
+    placement: OverlayPlacement;
   };
 };
 

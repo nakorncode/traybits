@@ -360,6 +360,13 @@ button {
   font-weight: 600;
 }
 
+.field-label {
+  display: block;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .field-row select,
 .field-row input[type="number"] {
   min-width: 230px;
@@ -674,6 +681,44 @@ button {
 
 .language-indicator-card.fallback strong {
   background: #0f766e;
+}
+
+.language-indicator-card.corner-badge {
+  width: 108px;
+  height: 54px;
+  gap: 2px;
+  padding: 7px 10px;
+  border-color: rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(10, 10, 12, 0.76);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(14px);
+}
+
+.language-indicator-card.corner-badge strong {
+  min-width: 46px;
+  height: 28px;
+  border-radius: 8px;
+  color: #0b1020;
+  background: #ffffff;
+  font-size: 16px;
+}
+
+.language-indicator-card.corner-badge.fallback strong {
+  background: #ccfbf1;
+}
+
+.language-indicator-card.corner-badge span {
+  display: block;
+  max-width: 88px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .eye-rest-stage {

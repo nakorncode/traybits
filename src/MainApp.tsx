@@ -247,6 +247,7 @@ export function CurrentLanguageIndicatorRoute() {
           currentLanguageIndicator: {
             enabled: app.settings()?.currentLanguageIndicator.enabled ?? false,
             mode: app.settings()?.currentLanguageIndicator.mode ?? "screenCorner",
+            placement: app.settings()?.currentLanguageIndicator.placement ?? "topRight",
             ...patch,
           },
         })
