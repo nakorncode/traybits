@@ -9,7 +9,7 @@ import { EyeRestPanel } from "./pages/EyeRest";
 import { CapsLockLanguageSwitchPanel } from "./pages/CapsLockLanguageSwitch";
 import { CurrentLanguageIndicatorPanel } from "./pages/CurrentLanguageIndicator";
 import { SettingsPanel } from "./pages/Settings";
-import type { AppNotification, AppSettings, NotificationCaptureStatus, NotificationListenerStatus, NotificationSoundPreset, OverlayMonitorOption, PreviewNotificationResult } from "./types";
+import type { AppNotification, AppSettings, NotificationCaptureStatus, NotificationListenerStatus, NotificationSoundPreset, OverlayMonitorOption, PreviewNotificationResult, SettingsStorageStatus } from "./types";
 
 export function MainApp(props: ParentProps) {
   const location = useLocation();
@@ -22,6 +22,7 @@ export function MainApp(props: ParentProps) {
   const [overlayMonitors, setOverlayMonitors] = createSignal<OverlayMonitorOption[]>([]);
   const [notifications, setNotifications] = createSignal<AppNotification[]>([]);
   const [captureStatus, setCaptureStatus] = createSignal<NotificationCaptureStatus>();
+  const [settingsStorageStatus, setSettingsStorageStatus] = createSignal<SettingsStorageStatus>();
 
   onMount(() => {
     const cleanupListeners: Array<() => void> = [];
@@ -34,13 +35,14 @@ export function MainApp(props: ParentProps) {
   });
 
   async function initializeApp(cleanupListeners: Array<() => void>) {
-    const [listener, appSettings, notificationItems, status, monitors, soundPresets] = await Promise.allSettled([
+    const [listener, appSettings, notificationItems, status, monitors, soundPresets, storageStatus] = await Promise.allSettled([
       invoke<NotificationListenerStatus>("notification_listener_status"),
       invoke<AppSettings>("get_app_settings"),
       invoke<AppNotification[]>("get_notifications"),
       invoke<NotificationCaptureStatus>("get_notification_capture_status"),
       invoke<OverlayMonitorOption[]>("get_notification_overlay_monitors"),
       invoke<NotificationSoundPreset[]>("get_notification_sound_presets"),
+      invoke<SettingsStorageStatus>("get_settings_storage_status"),
     ]);
     if (listener.status === "fulfilled") {
       setListenerStatus(listener.value);
@@ -62,6 +64,9 @@ export function MainApp(props: ParentProps) {
     }
     if (soundPresets.status === "fulfilled") {
       setNotificationSoundPresets(soundPresets.value);
+    }
+    if (storageStatus.status === "fulfilled") {
+      setSettingsStorageStatus(storageStatus.value);
     }
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
@@ -119,6 +124,7 @@ export function MainApp(props: ParentProps) {
     try {
       const saved = await invoke<AppSettings>("update_app_settings", { settings: next });
       setSettings(saved);
+      setSettingsStorageStatus(await invoke<SettingsStorageStatus>("get_settings_storage_status"));
     } catch (error) {
       setSettingsError(error instanceof Error ? error.message : String(error));
     }
@@ -146,6 +152,7 @@ export function MainApp(props: ParentProps) {
     listenerStatus,
     settings,
     settingsError,
+    settingsStorageStatus,
     notificationError,
     notificationStatus,
     notificationSoundPresets,
@@ -285,6 +292,7 @@ export function SettingsRoute() {
     <SettingsPanel
       settings={app.settings()}
       updateSettings={app.updateSettings}
+      storageStatus={app.settingsStorageStatus()}
       settingsError={app.settingsError()}
     />
   );

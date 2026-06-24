@@ -6,12 +6,14 @@ import type {
   NotificationListenerStatus,
   NotificationSoundPreset,
   OverlayMonitorOption,
+  SettingsStorageStatus,
 } from "./types";
 
 export type MainAppContextValue = {
   listenerStatus: Accessor<NotificationListenerStatus | undefined>;
   settings: Accessor<AppSettings | undefined>;
   settingsError: Accessor<string | undefined>;
+  settingsStorageStatus: Accessor<SettingsStorageStatus | undefined>;
   notificationError: Accessor<string | undefined>;
   notificationStatus: Accessor<string | undefined>;
   notificationSoundPresets: Accessor<NotificationSoundPreset[]>;

@@ -36,6 +36,15 @@ export type NotificationListenerStatus = {
   prototypeStep: string;
 };
 
+export type SettingsStorageStatus = {
+  path: string;
+  exists: boolean;
+  bytes?: number;
+  modifiedAt?: string;
+  loadOk: boolean;
+  message: string;
+};
+
 export type CloseBehavior = "minimizeToTray" | "exit";
 export type CapsLockFallbackHotkey = "ctrlCaps" | "shiftCaps" | "altCaps";
 export type OverlayPlacement =

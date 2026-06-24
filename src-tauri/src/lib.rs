@@ -294,6 +294,17 @@ struct NotificationListenerStatus {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct SettingsStorageStatus {
+    path: String,
+    exists: bool,
+    bytes: Option<u64>,
+    modified_at: Option<String>,
+    load_ok: bool,
+    message: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AppNotification {
     id: String,
     title: String,
@@ -667,12 +678,25 @@ impl Default for NotificationCaptureStatus {
 }
 
 #[tauri::command]
-fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
-    state
+fn get_app_settings(app: AppHandle, state: State<'_, AppState>) -> Result<AppSettings, String> {
+    if let Some(settings) = load_settings_from_disk(&app)? {
+        let mut current = state.settings.lock().map_err(|error| error.to_string())?;
+        *current = settings.clone();
+        return Ok(settings);
+    }
+
+    let settings = state
         .settings
         .lock()
         .map(|settings| settings.clone())
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    save_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn get_settings_storage_status(app: AppHandle) -> SettingsStorageStatus {
+    settings_storage_status(&app)
 }
 
 #[tauri::command]
@@ -1177,17 +1201,23 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
 }
 
 fn load_settings(app: &AppHandle) -> AppSettings {
-    let Ok(path) = settings_path(app) else {
-        return AppSettings::default();
-    };
+    load_settings_from_disk(app)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
 
-    let Ok(raw) = fs::read_to_string(path) else {
-        return AppSettings::default();
-    };
+fn load_settings_from_disk(app: &AppHandle) -> Result<Option<AppSettings>, String> {
+    let path = settings_path(app)?;
+    if !path.is_file() {
+        return Ok(None);
+    }
 
+    let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
     serde_json::from_str::<AppSettings>(&raw)
         .map(normalize_settings)
-        .unwrap_or_default()
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
@@ -1205,6 +1235,46 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
         .app_config_dir()
         .map(|dir| dir.join(SETTINGS_FILE))
         .map_err(|error| error.to_string())
+}
+
+fn settings_storage_status(app: &AppHandle) -> SettingsStorageStatus {
+    let Ok(path) = settings_path(app) else {
+        return SettingsStorageStatus {
+            path: "Not available".into(),
+            exists: false,
+            bytes: None,
+            modified_at: None,
+            load_ok: false,
+            message: "Tauri did not provide an app config directory.".into(),
+        };
+    };
+
+    let metadata = fs::metadata(&path).ok();
+    let exists = metadata.is_some();
+    let modified_at = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis().to_string());
+    let bytes = metadata.as_ref().map(|metadata| metadata.len());
+    let load_result = load_settings_from_disk(app);
+    let load_ok = matches!(load_result, Ok(Some(_))) || !exists;
+    let message = match load_result {
+        Ok(Some(_)) => "Settings file exists and loaded successfully.".into(),
+        Ok(None) => {
+            "Settings file does not exist yet; TrayBits will create it from defaults.".into()
+        }
+        Err(error) => format!("Settings file exists but failed to load: {error}"),
+    };
+
+    SettingsStorageStatus {
+        path: path.display().to_string(),
+        exists,
+        bytes,
+        modified_at,
+        load_ok,
+        message,
+    }
 }
 
 fn apply_runtime_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
@@ -3241,6 +3311,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let settings = load_settings(app.handle());
+            let _ = save_settings(app.handle(), &settings);
             let state = app.state::<AppState>();
             if let Ok(mut current_settings) = state.settings.lock() {
                 *current_settings = settings.clone();
@@ -3266,6 +3337,7 @@ pub fn run() {
             get_notification_overlay_monitors,
             get_notification_sound_presets,
             get_notifications,
+            get_settings_storage_status,
             hide_language_indicator_overlay,
             hide_toast_overlay,
             notification_listener_status,

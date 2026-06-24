@@ -1,9 +1,10 @@
 import { Show } from "solid-js";
-import type { AppSettings, CloseBehavior } from "../types";
+import type { AppSettings, CloseBehavior, SettingsStorageStatus } from "../types";
 
 export function SettingsPanel(props: {
   settings?: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
+  storageStatus?: SettingsStorageStatus;
   settingsError?: string;
 }) {
   return (
@@ -62,6 +63,28 @@ export function SettingsPanel(props: {
         If the tray icon is disabled, closing the window exits the app so it cannot disappear in the
         background.
       </p>
+      <Show when={props.storageStatus}>
+        {(status) => (
+          <dl class="fact-list compact-facts debug-facts">
+            <div>
+              <dt>Settings file</dt>
+              <dd>{status().path}</dd>
+            </div>
+            <div>
+              <dt>Storage status</dt>
+              <dd>{status().message}</dd>
+            </div>
+            <div>
+              <dt>File size</dt>
+              <dd>{status().exists ? `${status().bytes ?? 0} bytes` : "Not created yet"}</dd>
+            </div>
+            <div>
+              <dt>Modified</dt>
+              <dd>{status().modifiedAt ?? "Not available"}</dd>
+            </div>
+          </dl>
+        )}
+      </Show>
       <Show when={props.settingsError}>
         <p class="error-text">{props.settingsError}</p>
       </Show>
