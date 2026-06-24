@@ -359,6 +359,7 @@ struct InputLanguageInfo {
 #[serde(rename_all = "camelCase")]
 struct CurrentLanguageIndicatorStatus {
     enabled: bool,
+    mode: CurrentLanguageIndicatorMode,
     current: Option<InputLanguageInfo>,
     installed: Vec<InputLanguageInfo>,
     caret_available: bool,
@@ -450,6 +451,16 @@ struct CapsLockLanguageSwitchSettings {
 #[serde(rename_all = "camelCase")]
 struct CurrentLanguageIndicatorSettings {
     enabled: bool,
+    #[serde(default = "default_current_language_indicator_mode")]
+    mode: CurrentLanguageIndicatorMode,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum CurrentLanguageIndicatorMode {
+    CaretOverlay,
+    ScreenCorner,
+    FocusedWindowCorner,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -544,6 +555,10 @@ fn default_eye_rest_interval_minutes() -> u32 {
     20
 }
 
+fn default_current_language_indicator_mode() -> CurrentLanguageIndicatorMode {
+    CurrentLanguageIndicatorMode::ScreenCorner
+}
+
 impl Default for EyeRestReminderSettings {
     fn default() -> Self {
         Self {
@@ -555,7 +570,10 @@ impl Default for EyeRestReminderSettings {
 
 impl Default for CurrentLanguageIndicatorSettings {
     fn default() -> Self {
-        Self { enabled: false }
+        Self {
+            enabled: false,
+            mode: default_current_language_indicator_mode(),
+        }
     }
 }
 
@@ -2149,8 +2167,9 @@ mod notification_capture {
 #[cfg(target_os = "windows")]
 mod language_indicator {
     use super::{
-        CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorSettings,
-        CurrentLanguageIndicatorStatus, InputLanguageInfo, LanguageIndicatorPayload,
+        CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorMode,
+        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
+        LanguageIndicatorPayload,
     };
     use std::{
         sync::{Mutex, OnceLock},
@@ -2183,16 +2202,30 @@ mod language_indicator {
                 },
                 Input::KeyboardAndMouse::{GetKeyboardLayout, GetKeyboardLayoutList, HKL},
                 WindowsAndMessaging::{
-                    GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, GUITHREADINFO,
-                    GUI_CARETBLINKING,
+                    GetForegroundWindow, GetGUIThreadInfo, GetWindowRect, GetWindowThreadProcessId,
+                    SetWindowPos, ShowWindow, GUITHREADINFO, GUI_CARETBLINKING, HWND_TOPMOST,
+                    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
                 },
             },
         },
     };
 
-    #[derive(Clone, Copy, Default)]
+    const INDICATOR_WINDOW_WIDTH: i32 = 48;
+    const INDICATOR_WINDOW_HEIGHT: i32 = 30;
+
+    #[derive(Clone, Copy)]
     struct IndicatorSettings {
         enabled: bool,
+        mode: CurrentLanguageIndicatorMode,
+    }
+
+    impl Default for IndicatorSettings {
+        fn default() -> Self {
+            Self {
+                enabled: false,
+                mode: CurrentLanguageIndicatorMode::ScreenCorner,
+            }
+        }
     }
 
     #[derive(Clone)]
@@ -2213,6 +2246,7 @@ mod language_indicator {
         if let Some(lock) = SETTINGS.get() {
             if let Ok(mut current) = lock.lock() {
                 current.enabled = settings.enabled;
+                current.mode = settings.mode;
             }
         }
 
@@ -2226,12 +2260,14 @@ mod language_indicator {
     }
 
     pub fn status(enabled: bool) -> CurrentLanguageIndicatorStatus {
+        let mode = current_settings().mode;
         let current = active_input_language();
         let caret_probe = caret_position_probe();
         let caret = caret_probe.position;
         let caret_available = caret.is_some();
         CurrentLanguageIndicatorStatus {
             enabled,
+            mode,
             current,
             installed: installed_languages(),
             caret_available,
@@ -2254,7 +2290,8 @@ mod language_indicator {
     }
 
     pub fn preview(app: &AppHandle) -> Result<(), String> {
-        let snapshot = active_language_snapshot()
+        let settings = current_settings();
+        let snapshot = active_language_snapshot(app, settings.mode)
             .ok_or_else(|| "Could not read the active input language.".to_string())?;
         show(app, &snapshot)
     }
@@ -2265,7 +2302,8 @@ mod language_indicator {
                 let mut last_signature = String::new();
                 loop {
                     if current_settings().enabled {
-                        if let Some(snapshot) = active_language_snapshot() {
+                        let settings = current_settings();
+                        if let Some(snapshot) = active_language_snapshot(&app, settings.mode) {
                             if snapshot.signature != last_signature {
                                 last_signature = snapshot.signature.clone();
                                 let _ = show(&app, &snapshot);
@@ -2298,10 +2336,11 @@ mod language_indicator {
             caret_available: snapshot.caret_available,
         };
 
-        let width = 48;
-        let height = 30;
         window
-            .set_size(tauri::PhysicalSize::new(width, height))
+            .set_size(tauri::PhysicalSize::new(
+                INDICATOR_WINDOW_WIDTH as u32,
+                INDICATOR_WINDOW_HEIGHT as u32,
+            ))
             .map_err(|error| error.to_string())?;
         window
             .set_position(tauri::PhysicalPosition::new(snapshot.x, snapshot.y))
@@ -2310,7 +2349,7 @@ mod language_indicator {
             .set_always_on_top(true)
             .map_err(|error| error.to_string())?;
         let _ = window.set_ignore_cursor_events(true);
-        window.show().map_err(|error| error.to_string())?;
+        show_language_indicator_without_focus(&window)?;
         app.emit_to(
             "language-indicator",
             "traybits://language-indicator",
@@ -2319,21 +2358,79 @@ mod language_indicator {
         .map_err(|error| error.to_string())
     }
 
+    fn show_language_indicator_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
     pub fn hide(app: &AppHandle) {
         if let Some(window) = app.get_webview_window("language-indicator") {
             let _ = window.hide();
         }
     }
 
-    fn active_language_snapshot() -> Option<IndicatorSnapshot> {
+    fn active_language_snapshot(
+        app: &AppHandle,
+        mode: CurrentLanguageIndicatorMode,
+    ) -> Option<IndicatorSnapshot> {
         let language = active_input_language()?;
-        let position = caret_position()?;
+        let position = match mode {
+            CurrentLanguageIndicatorMode::CaretOverlay => caret_position()?,
+            CurrentLanguageIndicatorMode::ScreenCorner => screen_corner_position(app)?,
+            CurrentLanguageIndicatorMode::FocusedWindowCorner => {
+                focused_window_corner_position().or_else(|| screen_corner_position(app))?
+            }
+        };
         Some(IndicatorSnapshot {
-            signature: format!("{}:{}", language.id, position.source),
+            signature: format!(
+                "{}:{}:{}:{}",
+                language.id, position.source, position.x, position.y
+            ),
             language,
             x: position.x,
             y: position.y,
             caret_available: position.caret_available,
+        })
+    }
+
+    fn screen_corner_position(app: &AppHandle) -> Option<IndicatorPosition> {
+        let monitor = app.primary_monitor().ok().flatten()?;
+        let work_area = monitor.work_area();
+        Some(IndicatorPosition {
+            x: work_area.position.x + work_area.size.width as i32 - INDICATOR_WINDOW_WIDTH - 24,
+            y: work_area.position.y + 24,
+            caret_available: true,
+            source: "Screen corner",
+        })
+    }
+
+    fn focused_window_corner_position() -> Option<IndicatorPosition> {
+        let foreground_window = unsafe { GetForegroundWindow() };
+        if foreground_window.is_invalid() {
+            return None;
+        }
+        let mut rect = Default::default();
+        if unsafe { GetWindowRect(foreground_window, &mut rect) }.is_err() {
+            return None;
+        }
+        Some(IndicatorPosition {
+            x: rect.right - INDICATOR_WINDOW_WIDTH - 12,
+            y: rect.top + 12,
+            caret_available: true,
+            source: "Focused window corner",
         })
     }
 
@@ -2391,14 +2488,11 @@ mod language_indicator {
             if com_init.is_err() {
                 notes.push(format!("CoInitializeEx returned {com_init:?}"));
             }
-            let automation: IUIAutomation = match CoCreateInstance(
-                &CUIAutomation,
-                None,
-                CLSCTX_INPROC_SERVER,
-            ) {
-                Ok(automation) => automation,
-                Err(error) => return (None, format!("CoCreateInstance failed: {error}")),
-            };
+            let automation: IUIAutomation =
+                match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
+                    Ok(automation) => automation,
+                    Err(error) => return (None, format!("CoCreateInstance failed: {error}")),
+                };
             let element = match automation.GetFocusedElement() {
                 Ok(element) => element,
                 Err(error) => return (None, format!("GetFocusedElement failed: {error}")),
@@ -2468,7 +2562,12 @@ mod language_indicator {
             };
             let selection_count = match selection.Length() {
                 Ok(selection_count) => selection_count,
-                Err(error) => return (None, format!("TextPattern selection length failed: {error}")),
+                Err(error) => {
+                    return (
+                        None,
+                        format!("TextPattern selection length failed: {error}"),
+                    )
+                }
             };
             if selection_count <= 0 {
                 return (None, "TextPattern selection array is empty.".into());
@@ -2717,8 +2816,8 @@ mod language_indicator {
 #[cfg(not(target_os = "windows"))]
 mod language_indicator {
     use super::{
-        CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorSettings,
-        CurrentLanguageIndicatorStatus, InputLanguageInfo,
+        CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorMode,
+        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
     };
     use tauri::AppHandle;
 
@@ -2727,6 +2826,7 @@ mod language_indicator {
     pub fn status(enabled: bool) -> CurrentLanguageIndicatorStatus {
         CurrentLanguageIndicatorStatus {
             enabled,
+            mode: CurrentLanguageIndicatorMode::ScreenCorner,
             current: None,
             installed: Vec::<InputLanguageInfo>::new(),
             caret_available: false,

@@ -1,6 +1,6 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, CurrentLanguageIndicatorStatus } from "../types";
+import type { AppSettings, CurrentLanguageIndicatorMode, CurrentLanguageIndicatorStatus } from "../types";
 
 export function CurrentLanguageIndicatorPanel(props: {
   settings?: AppSettings["currentLanguageIndicator"];
@@ -39,8 +39,8 @@ export function CurrentLanguageIndicatorPanel(props: {
         </div>
         <p>
           Shows a compact language marker such as TH, EN, or JA when Windows reports that the
-          foreground input language changed. The marker appears only when Windows exposes a real
-          caret rectangle through UI Automation or Win32 caret APIs.
+          foreground input language changed. Caret overlay is experimental; corner modes avoid
+          caret-specific focus and provider issues.
         </p>
         <div class="settings-list">
           <label class="toggle-row">
@@ -51,6 +51,22 @@ export function CurrentLanguageIndicatorPanel(props: {
               onChange={(event) => props.updateSettings({ enabled: event.currentTarget.checked })}
             />
             Enable Current Language Indicator
+          </label>
+          <label class="field-row">
+            <span>Display mode</span>
+            <select
+              value={props.settings?.mode ?? "screenCorner"}
+              disabled={!props.settings}
+              onChange={(event) =>
+                props.updateSettings({
+                  mode: event.currentTarget.value as CurrentLanguageIndicatorMode,
+                })
+              }
+            >
+              <option value="screenCorner">Screen corner</option>
+              <option value="focusedWindowCorner">Focused window corner</option>
+              <option value="caretOverlay">Caret overlay (experimental)</option>
+            </select>
           </label>
           <button class="quiet-button" type="button" onClick={previewIndicator}>
             Preview indicator
@@ -70,6 +86,10 @@ export function CurrentLanguageIndicatorPanel(props: {
           <strong>{status()?.enabled ? "Enabled" : "Disabled"}</strong>
         </div>
         <dl class="fact-list compact-facts">
+          <div>
+            <dt>Display mode</dt>
+            <dd>{status()?.mode ?? "Loading"}</dd>
+          </div>
           <div>
             <dt>Current language</dt>
             <dd>

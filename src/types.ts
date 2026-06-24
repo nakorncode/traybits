@@ -83,6 +83,7 @@ export type InputLanguageInfo = {
 
 export type CurrentLanguageIndicatorStatus = {
   enabled: boolean;
+  mode: CurrentLanguageIndicatorMode;
   current?: InputLanguageInfo;
   installed: InputLanguageInfo[];
   caretAvailable: boolean;
@@ -90,6 +91,8 @@ export type CurrentLanguageIndicatorStatus = {
   message: string;
   debug: CurrentLanguageIndicatorDebug;
 };
+
+export type CurrentLanguageIndicatorMode = "caretOverlay" | "screenCorner" | "focusedWindowCorner";
 
 export type CurrentLanguageIndicatorDebug = {
   foregroundWindow: string;
@@ -131,6 +134,7 @@ export type AppSettings = {
   };
   currentLanguageIndicator: {
     enabled: boolean;
+    mode: CurrentLanguageIndicatorMode;
   };
 };
 
