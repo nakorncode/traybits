@@ -392,6 +392,7 @@ struct LanguageIndicatorPayload {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
     run_on_startup: bool,
@@ -443,6 +444,7 @@ enum OverlayPlacement {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 #[serde(rename_all = "camelCase")]
 struct CapsLockLanguageSwitchSettings {
     enabled: bool,
@@ -602,6 +604,15 @@ impl Default for EyeRestReminderSettings {
     }
 }
 
+impl Default for CapsLockLanguageSwitchSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
+        }
+    }
+}
+
 impl Default for CurrentLanguageIndicatorSettings {
     fn default() -> Self {
         Self {
@@ -630,10 +641,7 @@ impl Default for AppSettings {
             notification_overlay_debug_visible: default_notification_overlay_debug_visible(),
             notification_overlay_bounds_visible: default_notification_overlay_bounds_visible(),
             eye_rest_reminder: EyeRestReminderSettings::default(),
-            caps_lock_language_switch: CapsLockLanguageSwitchSettings {
-                enabled: false,
-                preserve_caps_lock_with: CapsLockFallbackHotkey::CtrlCaps,
-            },
+            caps_lock_language_switch: CapsLockLanguageSwitchSettings::default(),
             current_language_indicator: CurrentLanguageIndicatorSettings::default(),
         }
     }
@@ -1408,7 +1416,7 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         let logical_height = if settings.notification_overlay_debug_visible {
             520.0 * scale
         } else {
-            96.0 * scale
+            144.0 * scale
         };
         set_toast_overlay_bounds(
             &window,
@@ -1450,7 +1458,7 @@ fn resize_toast_overlay(app: &AppHandle, content_height: f64) -> Result<(), Stri
     let min_height = if settings.notification_overlay_debug_visible {
         520.0 * scale
     } else {
-        72.0 * scale
+        128.0 * scale
     };
     let max_height = (work_area.size.height as f64 - margin * 2.0).max(min_height);
     let requested_height = (content_height * scale).ceil();
@@ -3206,4 +3214,76 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_settings_deserialize_preserves_old_settings_without_new_fields() {
+        let raw = r#"{
+          "runOnStartup": false,
+          "runHighPriority": true,
+          "closeBehavior": "exit",
+          "enableTrayIcon": true,
+          "nativeNotificationEnabled": false,
+          "dismissMirroredWindowsNotifications": true,
+          "notificationSoundEnabled": true,
+          "notificationSoundPreset": "aosp-argon",
+          "notificationOverlayPlacement": "topCenter",
+          "notificationOverlayMonitor": "primary",
+          "notificationOverlayDebugVisible": false,
+          "notificationOverlayBoundsVisible": true,
+          "eyeRestReminder": {
+            "enabled": false,
+            "intervalMinutes": 20
+          },
+          "capsLockLanguageSwitch": {
+            "enabled": true,
+            "preserveCapsLockWith": "ctrlCaps"
+          },
+          "currentLanguageIndicator": {
+            "enabled": true,
+            "mode": "screenCorner",
+            "placement": "bottomRight"
+          }
+        }"#;
+
+        let settings = normalize_settings(serde_json::from_str::<AppSettings>(raw).unwrap());
+
+        assert!(settings.run_high_priority);
+        assert!(!settings.native_notification_enabled);
+        assert!(settings.dismiss_mirrored_windows_notifications);
+        assert_eq!(
+            settings.notification_overlay_placement,
+            OverlayPlacement::TopCenter
+        );
+        assert!(settings.caps_lock_language_switch.enabled);
+        assert!(settings.current_language_indicator.enabled);
+        assert_eq!(
+            settings.current_language_indicator.placement,
+            OverlayPlacement::BottomRight
+        );
+        assert_eq!(
+            settings.current_language_indicator.size,
+            CurrentLanguageIndicatorSize::Medium
+        );
+    }
+
+    #[test]
+    fn app_settings_deserialize_defaults_missing_top_level_fields() {
+        let settings = serde_json::from_str::<AppSettings>(r#"{"enableTrayIcon":false}"#).unwrap();
+
+        assert!(!settings.enable_tray_icon);
+        assert_eq!(settings.close_behavior, CloseBehavior::MinimizeToTray);
+        assert_eq!(
+            settings.notification_sound_preset,
+            default_notification_sound_preset()
+        );
+        assert_eq!(
+            settings.current_language_indicator.size,
+            CurrentLanguageIndicatorSize::Medium
+        );
+    }
 }

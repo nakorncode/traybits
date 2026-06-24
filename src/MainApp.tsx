@@ -23,8 +23,18 @@ export function MainApp(props: ParentProps) {
   const [notifications, setNotifications] = createSignal<AppNotification[]>([]);
   const [captureStatus, setCaptureStatus] = createSignal<NotificationCaptureStatus>();
 
-  onMount(async () => {
-    const [listener, appSettings, notificationItems, status, monitors, soundPresets] = await Promise.all([
+  onMount(() => {
+    const cleanupListeners: Array<() => void> = [];
+    void initializeApp(cleanupListeners);
+    onCleanup(() => {
+      for (const cleanup of cleanupListeners) {
+        cleanup();
+      }
+    });
+  });
+
+  async function initializeApp(cleanupListeners: Array<() => void>) {
+    const [listener, appSettings, notificationItems, status, monitors, soundPresets] = await Promise.allSettled([
       invoke<NotificationListenerStatus>("notification_listener_status"),
       invoke<AppSettings>("get_app_settings"),
       invoke<AppNotification[]>("get_notifications"),
@@ -32,12 +42,27 @@ export function MainApp(props: ParentProps) {
       invoke<OverlayMonitorOption[]>("get_notification_overlay_monitors"),
       invoke<NotificationSoundPreset[]>("get_notification_sound_presets"),
     ]);
-    setListenerStatus(listener);
-    setSettings(appSettings);
-    setNotifications(notificationItems);
-    setCaptureStatus(status);
-    setOverlayMonitors(monitors);
-    setNotificationSoundPresets(soundPresets);
+    if (listener.status === "fulfilled") {
+      setListenerStatus(listener.value);
+    }
+    if (appSettings.status === "fulfilled") {
+      setSettings(appSettings.value);
+      setSettingsError(undefined);
+    } else {
+      setSettingsError(String(appSettings.reason));
+    }
+    if (notificationItems.status === "fulfilled") {
+      setNotifications(notificationItems.value);
+    }
+    if (status.status === "fulfilled") {
+      setCaptureStatus(status.value);
+    }
+    if (monitors.status === "fulfilled") {
+      setOverlayMonitors(monitors.value);
+    }
+    if (soundPresets.status === "fulfilled") {
+      setNotificationSoundPresets(soundPresets.value);
+    }
 
     const unlistenAdded = await listen<AppNotification>("traybits://notification-added", (event) => {
       setNotifications((items) => [event.payload, ...items.filter((item) => item.id !== event.payload.id)]);
@@ -49,13 +74,8 @@ export function MainApp(props: ParentProps) {
     const unlistenCleared = await listen("traybits://notifications-cleared", () => {
       setNotifications([]);
     });
-
-    onCleanup(() => {
-      unlistenAdded();
-      unlistenDismissed();
-      unlistenCleared();
-    });
-  });
+    cleanupListeners.push(unlistenAdded, unlistenDismissed, unlistenCleared);
+  }
 
   const active = createMemo(() => tools.find((tool) => tool.path === location.pathname) ?? tools[0]);
 

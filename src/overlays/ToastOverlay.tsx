@@ -150,6 +150,7 @@ export function ToastOverlay() {
   function measureAndResizeOverlay() {
     if (!stageRef) return;
     const measuredElements = [
+      ...Array.from(stageRef.querySelectorAll<HTMLElement>("[data-sonner-toaster]")),
       ...Array.from(stageRef.querySelectorAll<HTMLElement>("[data-sonner-toast]")),
       ...Array.from(stageRef.querySelectorAll<HTMLElement>(".overlay-debug-card")),
     ];
@@ -158,14 +159,16 @@ export function ToastOverlay() {
     const stageTop = stageRef.getBoundingClientRect().top;
     const bounds = measuredElements.map((element) => {
       const rect = element.getBoundingClientRect();
+      const top = rect.top - stageTop;
+      const bottom = Math.max(rect.bottom - stageTop, top + element.scrollHeight);
       return {
-        bottom: rect.bottom - stageTop,
-        top: rect.top - stageTop,
+        bottom,
+        top,
       };
     });
     const contentTop = Math.min(...bounds.map((rect) => rect.top));
     const contentBottom = Math.max(...bounds.map((rect) => rect.bottom));
-    const contentHeight = Math.ceil(contentBottom - contentTop + 36);
+    const contentHeight = Math.ceil(contentBottom - contentTop + 56);
     if (!Number.isFinite(contentHeight) || contentHeight <= 0) return;
     if (Math.abs(contentHeight - lastMeasuredOverlayHeight) < 8) return;
     lastMeasuredOverlayHeight = contentHeight;
