@@ -385,6 +385,7 @@ struct LanguageIndicatorPayload {
     label: String,
     locale_name: String,
     mode: CurrentLanguageIndicatorMode,
+    size: CurrentLanguageIndicatorSize,
     x: i32,
     y: i32,
     caret_available: bool,
@@ -456,6 +457,8 @@ struct CurrentLanguageIndicatorSettings {
     mode: CurrentLanguageIndicatorMode,
     #[serde(default = "default_current_language_indicator_placement")]
     placement: OverlayPlacement,
+    #[serde(default = "default_current_language_indicator_size")]
+    size: CurrentLanguageIndicatorSize,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -464,6 +467,14 @@ enum CurrentLanguageIndicatorMode {
     CaretOverlay,
     ScreenCorner,
     FocusedWindowCorner,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum CurrentLanguageIndicatorSize {
+    Small,
+    Medium,
+    Large,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -578,6 +589,10 @@ fn default_current_language_indicator_placement() -> OverlayPlacement {
     OverlayPlacement::TopRight
 }
 
+fn default_current_language_indicator_size() -> CurrentLanguageIndicatorSize {
+    CurrentLanguageIndicatorSize::Medium
+}
+
 impl Default for EyeRestReminderSettings {
     fn default() -> Self {
         Self {
@@ -593,6 +608,7 @@ impl Default for CurrentLanguageIndicatorSettings {
             enabled: false,
             mode: default_current_language_indicator_mode(),
             placement: default_current_language_indicator_placement(),
+            size: default_current_language_indicator_size(),
         }
     }
 }
@@ -2188,8 +2204,9 @@ mod notification_capture {
 mod language_indicator {
     use super::{
         overlay_position, CurrentLanguageIndicatorDebug, CurrentLanguageIndicatorMode,
-        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorStatus, InputLanguageInfo,
-        LanguageIndicatorPayload, OverlayPlacement,
+        CurrentLanguageIndicatorSettings, CurrentLanguageIndicatorSize,
+        CurrentLanguageIndicatorStatus, InputLanguageInfo, LanguageIndicatorPayload,
+        OverlayPlacement,
     };
     use std::{
         sync::{Mutex, OnceLock},
@@ -2230,14 +2247,12 @@ mod language_indicator {
         },
     };
 
-    const INDICATOR_WINDOW_WIDTH: i32 = 48;
-    const INDICATOR_WINDOW_HEIGHT: i32 = 30;
-
     #[derive(Clone, Copy)]
     struct IndicatorSettings {
         enabled: bool,
         mode: CurrentLanguageIndicatorMode,
         placement: OverlayPlacement,
+        size: CurrentLanguageIndicatorSize,
     }
 
     impl Default for IndicatorSettings {
@@ -2246,6 +2261,7 @@ mod language_indicator {
                 enabled: false,
                 mode: CurrentLanguageIndicatorMode::ScreenCorner,
                 placement: OverlayPlacement::TopRight,
+                size: CurrentLanguageIndicatorSize::Medium,
             }
         }
     }
@@ -2254,6 +2270,7 @@ mod language_indicator {
     struct IndicatorSnapshot {
         language: InputLanguageInfo,
         mode: CurrentLanguageIndicatorMode,
+        size: CurrentLanguageIndicatorSize,
         x: i32,
         y: i32,
         caret_available: bool,
@@ -2271,6 +2288,7 @@ mod language_indicator {
                 current.enabled = settings.enabled;
                 current.mode = settings.mode;
                 current.placement = settings.placement;
+                current.size = settings.size;
             }
         }
 
@@ -2357,12 +2375,13 @@ mod language_indicator {
             label: snapshot.language.label.clone(),
             locale_name: snapshot.language.locale_name.clone(),
             mode: snapshot.mode,
+            size: snapshot.size,
             x: snapshot.x,
             y: snapshot.y,
             caret_available: snapshot.caret_available,
         };
 
-        let (width, height) = indicator_window_size(snapshot.mode);
+        let (width, height) = indicator_window_size(snapshot.size);
         window
             .set_size(tauri::PhysicalSize::new(width as u32, height as u32))
             .map_err(|error| error.to_string())?;
@@ -2414,20 +2433,21 @@ mod language_indicator {
         let position = match settings.mode {
             CurrentLanguageIndicatorMode::CaretOverlay => caret_position()?,
             CurrentLanguageIndicatorMode::ScreenCorner => {
-                screen_corner_position(app, settings.placement)?
+                screen_corner_position(app, settings.placement, settings.size)?
             }
             CurrentLanguageIndicatorMode::FocusedWindowCorner => {
-                focused_window_corner_position(settings.placement)
-                    .or_else(|| screen_corner_position(app, settings.placement))?
+                focused_window_corner_position(settings.placement, settings.size)
+                    .or_else(|| screen_corner_position(app, settings.placement, settings.size))?
             }
         };
         Some(IndicatorSnapshot {
             signature: format!(
-                "{}:{:?}:{}:{}:{}",
-                language.id, settings.mode, position.source, position.x, position.y
+                "{}:{:?}:{:?}:{}:{}:{}",
+                language.id, settings.mode, settings.size, position.source, position.x, position.y
             ),
             language,
             mode: settings.mode,
+            size: settings.size,
             x: position.x,
             y: position.y,
             caret_available: position.caret_available,
@@ -2437,10 +2457,11 @@ mod language_indicator {
     fn screen_corner_position(
         app: &AppHandle,
         placement: OverlayPlacement,
+        size: CurrentLanguageIndicatorSize,
     ) -> Option<IndicatorPosition> {
         let monitor = app.primary_monitor().ok().flatten()?;
         let work_area = monitor.work_area();
-        let (width, height) = indicator_window_size(CurrentLanguageIndicatorMode::ScreenCorner);
+        let (width, height) = indicator_window_size(size);
         let (x, y) = overlay_position(
             placement,
             work_area.position.x as f64,
@@ -2459,7 +2480,10 @@ mod language_indicator {
         })
     }
 
-    fn focused_window_corner_position(placement: OverlayPlacement) -> Option<IndicatorPosition> {
+    fn focused_window_corner_position(
+        placement: OverlayPlacement,
+        size: CurrentLanguageIndicatorSize,
+    ) -> Option<IndicatorPosition> {
         let foreground_window = unsafe { GetForegroundWindow() };
         if foreground_window.is_invalid() {
             return None;
@@ -2468,8 +2492,7 @@ mod language_indicator {
         if unsafe { GetWindowRect(foreground_window, &mut rect) }.is_err() {
             return None;
         }
-        let (width, height) =
-            indicator_window_size(CurrentLanguageIndicatorMode::FocusedWindowCorner);
+        let (width, height) = indicator_window_size(size);
         let (x, y) = overlay_position(
             placement,
             rect.left as f64,
@@ -2488,13 +2511,11 @@ mod language_indicator {
         })
     }
 
-    fn indicator_window_size(mode: CurrentLanguageIndicatorMode) -> (i32, i32) {
-        match mode {
-            CurrentLanguageIndicatorMode::CaretOverlay => {
-                (INDICATOR_WINDOW_WIDTH, INDICATOR_WINDOW_HEIGHT)
-            }
-            CurrentLanguageIndicatorMode::ScreenCorner
-            | CurrentLanguageIndicatorMode::FocusedWindowCorner => (116, 62),
+    fn indicator_window_size(size: CurrentLanguageIndicatorSize) -> (i32, i32) {
+        match size {
+            CurrentLanguageIndicatorSize::Small => (54, 34),
+            CurrentLanguageIndicatorSize::Medium => (68, 42),
+            CurrentLanguageIndicatorSize::Large => (86, 54),
         }
     }
 
@@ -2839,7 +2860,7 @@ mod language_indicator {
         let iso_code = locale_string(locale_name.as_str(), LOCALE_SISO639LANGNAME2)
             .or_else(|| locale_name.split('-').next().map(|value| value.to_string()))
             .unwrap_or_else(|| "und".into());
-        let display_code = iso_code.to_uppercase();
+        let display_code = display_language_code(&iso_code);
         let label = locale_string(locale_name.as_str(), LOCALE_SLOCALIZEDDISPLAYNAME)
             .unwrap_or_else(|| locale_name.clone());
         Some(InputLanguageInfo {
@@ -2849,6 +2870,17 @@ mod language_indicator {
             display_code,
             locale_name,
         })
+    }
+
+    fn display_language_code(code: &str) -> String {
+        match code.to_ascii_lowercase().as_str() {
+            "en" => "ENG".into(),
+            "th" => "THA".into(),
+            "ja" => "JPN".into(),
+            "ko" => "KOR".into(),
+            "zh" => "ZHO".into(),
+            value => value.to_ascii_uppercase(),
+        }
     }
 
     fn locale_name_from_lang_id(lang_id: u32) -> Option<String> {

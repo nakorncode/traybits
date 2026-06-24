@@ -94,6 +94,8 @@ export type CurrentLanguageIndicatorStatus = {
 
 export type CurrentLanguageIndicatorMode = "caretOverlay" | "screenCorner" | "focusedWindowCorner";
 
+export type CurrentLanguageIndicatorSize = "small" | "medium" | "large";
+
 export type CurrentLanguageIndicatorDebug = {
   foregroundWindow: string;
   foregroundThreadId?: number;
@@ -107,6 +109,7 @@ export type LanguageIndicatorPayload = {
   label: string;
   localeName: string;
   mode: CurrentLanguageIndicatorMode;
+  size: CurrentLanguageIndicatorSize;
   x: number;
   y: number;
   caretAvailable: boolean;
@@ -137,6 +140,7 @@ export type AppSettings = {
     enabled: boolean;
     mode: CurrentLanguageIndicatorMode;
     placement: OverlayPlacement;
+    size: CurrentLanguageIndicatorSize;
   };
 };
 

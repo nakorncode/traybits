@@ -1,7 +1,18 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { overlayPlacements } from "../constants";
-import type { AppSettings, CurrentLanguageIndicatorMode, CurrentLanguageIndicatorStatus } from "../types";
+import type {
+  AppSettings,
+  CurrentLanguageIndicatorMode,
+  CurrentLanguageIndicatorSize,
+  CurrentLanguageIndicatorStatus,
+} from "../types";
+
+const indicatorSizes: Array<{ id: CurrentLanguageIndicatorSize; label: string }> = [
+  { id: "small", label: "Small" },
+  { id: "medium", label: "Medium" },
+  { id: "large", label: "Large" },
+];
 
 export function CurrentLanguageIndicatorPanel(props: {
   settings?: AppSettings["currentLanguageIndicator"];
@@ -39,7 +50,7 @@ export function CurrentLanguageIndicatorPanel(props: {
           <strong>Current input language near the caret</strong>
         </div>
         <p>
-          Shows a compact language marker such as TH, EN, or JA when Windows reports that the
+          Shows a compact language marker such as THA, ENG, or JPN when Windows reports that the
           foreground input language changed. Caret overlay is experimental; corner modes avoid
           caret-specific focus and provider issues.
         </p>
@@ -82,6 +93,23 @@ export function CurrentLanguageIndicatorPanel(props: {
                     onClick={() => props.updateSettings({ placement: placement.id })}
                   >
                     {placement.shortLabel}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+          <div>
+            <span class="field-label">Indicator size</span>
+            <div class="segmented-control" role="group" aria-label="Language indicator size">
+              <For each={indicatorSizes}>
+                {(size) => (
+                  <button
+                    type="button"
+                    disabled={!props.settings}
+                    classList={{ selected: (props.settings?.size ?? "medium") === size.id }}
+                    onClick={() => props.updateSettings({ size: size.id })}
+                  >
+                    {size.label}
                   </button>
                 )}
               </For>
