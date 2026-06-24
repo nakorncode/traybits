@@ -1710,7 +1710,7 @@ mod priority {
 #[cfg(target_os = "windows")]
 mod notification_sound {
     use super::{default_notification_sound_file, notification_sound_preset, AppHandle};
-    use std::{os::windows::ffi::OsStrExt, path::PathBuf};
+    use std::{env, os::windows::ffi::OsStrExt, path::PathBuf};
     use tauri::Manager;
     use windows::core::PCWSTR;
     use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_NODEFAULT};
@@ -1728,25 +1728,67 @@ mod notification_sound {
             .chain(std::iter::once(0))
             .collect();
 
-        unsafe {
-            let _ = PlaySoundW(
+        let played = unsafe {
+            PlaySoundW(
                 PCWSTR(wide.as_mut_ptr()),
                 None,
                 SND_FILENAME | SND_ASYNC | SND_NODEFAULT,
-            );
+            )
+            .as_bool()
+        };
+        if !played {
+            return Err(format!(
+                "Windows could not play notification sound: {}",
+                path.display()
+            ));
         }
         Ok(())
     }
 
     fn sound_path(app: &AppHandle, file: &str) -> Option<PathBuf> {
+        sound_path_candidates(app, file)
+            .into_iter()
+            .find(|path| path.is_file())
+    }
+
+    fn sound_path_candidates(app: &AppHandle, file: &str) -> Vec<PathBuf> {
         let mut candidates = Vec::new();
 
         if let Ok(resource_dir) = app.path().resource_dir() {
             candidates.push(resource_dir.join(file));
             candidates.push(resource_dir.join("assets").join("sounds").join(file));
+            candidates.push(
+                resource_dir
+                    .join("_up_")
+                    .join("assets")
+                    .join("sounds")
+                    .join(file),
+            );
+            candidates.push(
+                resource_dir
+                    .join("..")
+                    .join("_up_")
+                    .join("assets")
+                    .join("sounds")
+                    .join(file),
+            );
         }
 
-        if let Ok(current_dir) = std::env::current_dir() {
+        if let Ok(exe) = env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                candidates.push(exe_dir.join(file));
+                candidates.push(exe_dir.join("assets").join("sounds").join(file));
+                candidates.push(
+                    exe_dir
+                        .join("_up_")
+                        .join("assets")
+                        .join("sounds")
+                        .join(file),
+                );
+            }
+        }
+
+        if let Ok(current_dir) = env::current_dir() {
             candidates.push(current_dir.join("assets").join("sounds").join(file));
             candidates.push(
                 current_dir
@@ -1755,9 +1797,16 @@ mod notification_sound {
                     .join("sounds")
                     .join(file),
             );
+            candidates.push(
+                current_dir
+                    .join("_up_")
+                    .join("assets")
+                    .join("sounds")
+                    .join(file),
+            );
         }
 
-        candidates.into_iter().find(|path| path.is_file())
+        candidates
     }
 }
 
