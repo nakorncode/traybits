@@ -487,6 +487,18 @@ struct AppState {
     eye_rest: Mutex<EyeRestState>,
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            settings: Mutex::new(AppSettings::default()),
+            notifications: Mutex::new(Vec::new()),
+            notification_capture_status: Mutex::new(NotificationCaptureStatus::default()),
+            captured_windows_notification_keys: Mutex::new(HashSet::new()),
+            eye_rest: Mutex::new(EyeRestState::default()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct EyeRestState {
     next_due_at: u64,
@@ -3061,23 +3073,20 @@ mod keyboard {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let settings = load_settings(app.handle());
-            app.manage(AppState {
-                settings: Mutex::new(settings.clone()),
-                notifications: Mutex::new(Vec::new()),
-                notification_capture_status: Mutex::new(NotificationCaptureStatus::default()),
-                captured_windows_notification_keys: Mutex::new(HashSet::new()),
-                eye_rest: Mutex::new(EyeRestState::default()),
-            });
+            let state = app.state::<AppState>();
+            if let Ok(mut current_settings) = state.settings.lock() {
+                *current_settings = settings.clone();
+            }
             apply_runtime_settings(app.handle(), &settings)?;
             keyboard::apply_settings(&settings.caps_lock_language_switch);
             language_indicator::apply_settings(app.handle(), &settings.current_language_indicator);
-            let state = app.state::<AppState>();
             sync_eye_rest_settings(state.inner(), &settings.eye_rest_reminder);
             sync_overlay_debug_visibility(app.handle(), &settings);
             notification_capture::start(app.handle().clone());
