@@ -13,6 +13,7 @@ export function ToastOverlay() {
   const [lastPollError, setLastPollError] = createSignal<string>();
   const announcedIds = new Set<string>();
   const activeSonnerIds = new Set<string>();
+  const notificationById = new Map<string, AppNotification>();
   let stageRef: HTMLDivElement | undefined;
   let lastMeasuredOverlayHeight = 0;
 
@@ -70,6 +71,7 @@ export function ToastOverlay() {
       for (const id of Array.from(activeSonnerIds)) {
         if (!visibleIds.has(id)) {
           activeSonnerIds.delete(id);
+          notificationById.delete(id);
           toast.dismiss(id);
         }
       }
@@ -86,14 +88,17 @@ export function ToastOverlay() {
     if (announcedIds.has(notification.id)) return;
     announcedIds.add(notification.id);
     activeSonnerIds.add(notification.id);
+    notificationById.set(notification.id, notification);
     toast.info(notification.title, {
       id: notification.id,
       toasterId: "overlay",
+      testId: notification.id,
       description: `${notification.source}: ${notification.body}`,
       duration: Number.POSITIVE_INFINITY,
       closeButton: true,
       onDismiss: () => {
         activeSonnerIds.delete(notification.id);
+        notificationById.delete(notification.id);
         void invoke("dismiss_notification", { id: notification.id });
         requestOverlayResize();
         scheduleOverlayHide();
@@ -104,39 +109,55 @@ export function ToastOverlay() {
   }
 
   function markOverlaySonnerInteractivity(notification: AppNotification) {
-    window.requestAnimationFrame(() => {
+    const mark = () => {
       const element = document.querySelector<HTMLElement>(
-        `[data-sonner-toast][data-id="${CSS.escape(notification.id)}"]`,
+        `[data-sonner-toast][data-testid="${CSS.escape(notification.id)}"]`,
       );
       if (!element) return;
       element.dataset.traybitsClickable = "true";
       element.style.cursor = "pointer";
-      if (element.dataset.traybitsOpenBound === "true") {
-        return;
-      }
-      element.dataset.traybitsOpenBound = "true";
-      element.addEventListener("click", (event) => {
-        const target = event.target as HTMLElement | null;
-        if (target?.closest("button")) return;
-        void openNotificationSource(notification.id);
-      });
-      element.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        void openNotificationSource(notification.id);
-      });
       element.tabIndex = 0;
       element.setAttribute("role", "button");
+    };
+    window.requestAnimationFrame(() => {
+      mark();
+      window.setTimeout(mark, 80);
+      window.setTimeout(mark, 240);
     });
   }
 
   async function openNotificationSource(id: string) {
     await invoke("open_notification_source", { id }).catch(() => undefined);
     activeSonnerIds.delete(id);
+    notificationById.delete(id);
     toast.dismiss(id);
     await invoke("dismiss_notification", { id }).catch(() => undefined);
     requestOverlayResize();
     scheduleOverlayHide();
+  }
+
+  function toastIdFromEventTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return undefined;
+    return target.closest<HTMLElement>("[data-sonner-toast]")?.dataset.testid;
+  }
+
+  function handleStageClick(event: MouseEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button")) return;
+    const id = toastIdFromEventTarget(event.target);
+    if (!id || !notificationById.has(id)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void openNotificationSource(id);
+  }
+
+  function handleStageKeyDown(event: KeyboardEvent) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const id = toastIdFromEventTarget(event.target);
+    if (!id || !notificationById.has(id)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void openNotificationSource(id);
   }
 
   function requestOverlayResize() {
@@ -189,6 +210,8 @@ export function ToastOverlay() {
         stageRef = element;
       }}
       class="toast-stage"
+      onClick={handleStageClick}
+      onKeyDown={handleStageKeyDown}
       onMouseEnter={requestOverlayResize}
       onMouseLeave={requestOverlayResize}
       classList={{
