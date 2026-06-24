@@ -696,14 +696,14 @@ button {
   box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
-  background: rgba(8, 8, 10, 0.72);
+  background: rgba(8, 8, 10, 0.84);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(12px);
 }
 
 .language-indicator-card.fallback {
   border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(8, 8, 10, 0.8);
+  background: rgba(8, 8, 10, 0.9);
 }
 
 .language-indicator-card strong {
