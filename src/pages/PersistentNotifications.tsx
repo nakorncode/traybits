@@ -19,6 +19,8 @@ export function PersistentNotificationsPanel(props: {
   notificationError?: string;
   notificationStatus?: string;
 }) {
+  const persistentNotificationsEnabled = props.settings?.persistentNotificationsEnabled ?? true;
+
   return (
     <div class="content-grid">
       <section class="panel primary-panel">
@@ -48,8 +50,23 @@ export function PersistentNotificationsPanel(props: {
             <dd>Short interface tone plays when a persistent notification is added.</dd>
           </div>
         </dl>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            checked={persistentNotificationsEnabled}
+            disabled={!props.settings}
+            onChange={(event) =>
+              props.updateSettings({ persistentNotificationsEnabled: event.currentTarget.checked })
+            }
+          />
+          Enable Persistent Notifications
+        </label>
         <div class="button-row">
-          <button type="button" onClick={props.pushDemoNotification}>
+          <button
+            type="button"
+            disabled={!props.settings || !persistentNotificationsEnabled}
+            onClick={props.pushDemoNotification}
+          >
             Run preview demo notification
           </button>
           <button type="button" onClick={props.clearNotifications}>
@@ -69,7 +86,7 @@ export function PersistentNotificationsPanel(props: {
               <button
                 type="button"
                 classList={{ selected: props.settings?.notificationOverlayPlacement === placement.id }}
-                disabled={!props.settings}
+                disabled={!props.settings || !persistentNotificationsEnabled}
                 onClick={() => props.updateSettings({ notificationOverlayPlacement: placement.id })}
                 title={placement.label}
               >
@@ -82,7 +99,7 @@ export function PersistentNotificationsPanel(props: {
           <span>Target screen</span>
           <select
             value={props.settings?.notificationOverlayMonitor ?? "primary"}
-            disabled={!props.settings || props.overlayMonitors.length === 0}
+            disabled={!props.settings || !persistentNotificationsEnabled || props.overlayMonitors.length === 0}
             onChange={(event) =>
               props.updateSettings({ notificationOverlayMonitor: event.currentTarget.value })
             }
@@ -101,7 +118,7 @@ export function PersistentNotificationsPanel(props: {
           <input
             type="checkbox"
             checked={props.settings?.nativeNotificationEnabled ?? true}
-            disabled={!props.settings}
+            disabled={!props.settings || !persistentNotificationsEnabled}
             onChange={(event) =>
               props.updateSettings({ nativeNotificationEnabled: event.currentTarget.checked })
             }
@@ -112,7 +129,7 @@ export function PersistentNotificationsPanel(props: {
           <input
             type="checkbox"
             checked={props.settings?.dismissMirroredWindowsNotifications ?? false}
-            disabled={!props.settings}
+            disabled={!props.settings || !persistentNotificationsEnabled}
             onChange={(event) =>
               props.updateSettings({
                 dismissMirroredWindowsNotifications: event.currentTarget.checked,
@@ -125,7 +142,7 @@ export function PersistentNotificationsPanel(props: {
           <input
             type="checkbox"
             checked={props.settings?.notificationSoundEnabled ?? true}
-            disabled={!props.settings}
+            disabled={!props.settings || !persistentNotificationsEnabled}
             onChange={(event) =>
               props.updateSettings({ notificationSoundEnabled: event.currentTarget.checked })
             }
@@ -136,7 +153,7 @@ export function PersistentNotificationsPanel(props: {
           <span>Notification sound</span>
           <select
             value={props.settings?.notificationSoundPreset ?? "aosp-argon"}
-            disabled={!props.settings || props.notificationSoundPresets.length === 0}
+            disabled={!props.settings || !persistentNotificationsEnabled || props.notificationSoundPresets.length === 0}
             onChange={(event) => {
               const presetId = event.currentTarget.value;
               props.updateSettings({ notificationSoundPreset: presetId });
@@ -152,7 +169,7 @@ export function PersistentNotificationsPanel(props: {
           <input
             type="checkbox"
             checked={props.settings?.notificationOverlayDebugVisible ?? true}
-            disabled={!props.settings}
+            disabled={!props.settings || !persistentNotificationsEnabled}
             onChange={(event) =>
               props.updateSettings({ notificationOverlayDebugVisible: event.currentTarget.checked })
             }
@@ -163,7 +180,7 @@ export function PersistentNotificationsPanel(props: {
           <input
             type="checkbox"
             checked={props.settings?.notificationOverlayBoundsVisible ?? false}
-            disabled={!props.settings}
+            disabled={!props.settings || !persistentNotificationsEnabled}
             onChange={(event) =>
               props.updateSettings({ notificationOverlayBoundsVisible: event.currentTarget.checked })
             }

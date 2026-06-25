@@ -130,6 +130,7 @@ export type AppSettings = {
   runHighPriority: boolean;
   closeBehavior: CloseBehavior;
   enableTrayIcon: boolean;
+  persistentNotificationsEnabled: boolean;
   nativeNotificationEnabled: boolean;
   dismissMirroredWindowsNotifications: boolean;
   notificationSoundEnabled: boolean;

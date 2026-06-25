@@ -411,6 +411,8 @@ struct AppSettings {
     run_high_priority: bool,
     close_behavior: CloseBehavior,
     enable_tray_icon: bool,
+    #[serde(default = "default_persistent_notifications_enabled")]
+    persistent_notifications_enabled: bool,
     #[serde(default = "default_native_notification_enabled")]
     native_notification_enabled: bool,
     #[serde(default = "default_dismiss_mirrored_windows_notifications")]
@@ -577,6 +579,10 @@ fn default_native_notification_enabled() -> bool {
     true
 }
 
+fn default_persistent_notifications_enabled() -> bool {
+    true
+}
+
 fn default_dismiss_mirrored_windows_notifications() -> bool {
     false
 }
@@ -650,6 +656,7 @@ impl Default for AppSettings {
             run_high_priority: false,
             close_behavior: CloseBehavior::MinimizeToTray,
             enable_tray_icon: true,
+            persistent_notifications_enabled: default_persistent_notifications_enabled(),
             native_notification_enabled: default_native_notification_enabled(),
             dismiss_mirrored_windows_notifications: default_dismiss_mirrored_windows_notifications(
             ),
@@ -730,6 +737,9 @@ fn update_app_settings(
     if previous_eye_rest_settings != settings.eye_rest_reminder {
         sync_eye_rest_settings(state.inner(), &settings.eye_rest_reminder);
         let _ = hide_eye_rest_overlay(app.clone());
+    }
+    if !settings.persistent_notifications_enabled {
+        let _ = hide_toast_overlay(app.clone());
     }
     app.emit("traybits://settings-updated", settings.clone())
         .map_err(|error| error.to_string())?;
@@ -954,6 +964,9 @@ fn push_demo_notification(
         .lock()
         .map(|settings| settings.clone())
         .map_err(|error| error.to_string())?;
+    if !settings.persistent_notifications_enabled {
+        return Err("Persistent Notifications is disabled.".into());
+    }
     let notification = AppNotification {
         id: format!("demo-{}", monotonic_millis()),
         title: "Demo notification".into(),
@@ -1045,6 +1058,20 @@ fn clear_notifications(app: AppHandle, state: State<'_, AppState>) -> Result<(),
 
 #[tauri::command]
 fn push_demo_toast(app: AppHandle, tone: String) -> Result<(), String> {
+    let persistent_notifications_enabled = app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .settings
+                .lock()
+                .ok()
+                .map(|settings| settings.persistent_notifications_enabled)
+        })
+        .unwrap_or(true);
+    if !persistent_notifications_enabled {
+        return Err("Persistent Notifications is disabled.".into());
+    }
+
     let payload = ToastPayload {
         id: monotonic_millis(),
         source: match tone.as_str() {
@@ -1080,6 +1107,18 @@ fn add_notification(
     show_overlay: bool,
     play_sound: bool,
 ) -> Result<NotificationDeliveryStatus, String> {
+    let settings = state
+        .settings
+        .lock()
+        .map(|settings| settings.clone())
+        .map_err(|error| error.to_string())?;
+    if !settings.persistent_notifications_enabled {
+        return Ok(NotificationDeliveryStatus {
+            ok: true,
+            message: "Persistent Notifications is disabled.".into(),
+        });
+    }
+
     {
         let mut notifications = state
             .notifications
@@ -1107,12 +1146,7 @@ fn add_notification(
         }
     };
     if play_sound {
-        let preset_id = state
-            .settings
-            .lock()
-            .ok()
-            .map(|settings| settings.notification_sound_preset.clone())
-            .unwrap_or_else(default_notification_sound_preset);
+        let preset_id = settings.notification_sound_preset;
         let _ = notification_sound::play(app, preset_id.as_str());
     }
     app.emit("traybits://notification-added", notification.clone())
@@ -1304,7 +1338,9 @@ fn sync_eye_rest_settings(state: &AppState, settings: &EyeRestReminderSettings) 
 }
 
 fn sync_overlay_debug_visibility(app: &AppHandle, settings: &AppSettings) {
-    if settings.notification_overlay_debug_visible {
+    if !settings.persistent_notifications_enabled {
+        let _ = hide_toast_overlay(app.clone());
+    } else if settings.notification_overlay_debug_visible {
         let _ = show_toast_window(app);
     } else {
         let _ = hide_toast_overlay(app.clone());
@@ -1513,8 +1549,7 @@ fn show_toast_window(app: &AppHandle) -> Result<(), String> {
         .set_always_on_top(true)
         .map_err(|error| error.to_string())?;
     let _ = window.set_ignore_cursor_events(false);
-    window.show().map_err(|error| error.to_string())?;
-    refresh_overlay_topmost(&window)
+    show_overlay_without_focus(&window)
 }
 
 fn resize_toast_overlay(app: &AppHandle, content_height: f64) -> Result<(), String> {
@@ -1554,8 +1589,7 @@ fn resize_toast_overlay(app: &AppHandle, content_height: f64) -> Result<(), Stri
         margin,
     );
     let _ = window.set_ignore_cursor_events(false);
-    window.show().map_err(|error| error.to_string())?;
-    refresh_overlay_topmost(&window)
+    show_overlay_without_focus(&window)
 }
 
 fn set_toast_overlay_bounds(
@@ -1584,6 +1618,22 @@ fn set_toast_overlay_bounds(
         logical_height.round() as u32,
     ));
     let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
+}
+
+#[cfg(windows)]
+fn show_overlay_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOWNOACTIVATE};
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+    refresh_overlay_topmost(window)
+}
+
+#[cfg(not(windows))]
+fn show_overlay_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window.show().map_err(|error| error.to_string())
 }
 
 #[cfg(windows)]
@@ -2081,6 +2131,17 @@ mod notification_capture {
 
     fn run_capture_loop(app: AppHandle) {
         let state = app.state::<AppState>();
+        while !persistent_notifications_enabled(state.inner()) {
+            set_notification_capture_status(
+                state.inner(),
+                false,
+                "disabled",
+                "Persistent Notifications is disabled.",
+                "none",
+            );
+            thread::sleep(Duration::from_millis(NOTIFICATION_CAPTURE_POLL_MS));
+        }
+
         let listener = match UserNotificationListener::Current() {
             Ok(listener) => listener,
             Err(error) => {
@@ -2149,10 +2210,29 @@ mod notification_capture {
 
         let mut initial_sync = true;
         loop {
-            capture_current_notifications(&app, state.inner(), &listener, initial_sync);
-            initial_sync = false;
+            if persistent_notifications_enabled(state.inner()) {
+                capture_current_notifications(&app, state.inner(), &listener, initial_sync);
+                initial_sync = false;
+            } else {
+                set_notification_capture_status(
+                    state.inner(),
+                    false,
+                    "disabled",
+                    "Persistent Notifications is disabled.",
+                    "none",
+                );
+                initial_sync = true;
+            }
             thread::sleep(Duration::from_millis(NOTIFICATION_CAPTURE_POLL_MS));
         }
+    }
+
+    fn persistent_notifications_enabled(state: &AppState) -> bool {
+        state
+            .settings
+            .lock()
+            .map(|settings| settings.persistent_notifications_enabled)
+            .unwrap_or(true)
     }
 
     fn capture_current_notifications(
@@ -2207,16 +2287,20 @@ mod notification_capture {
                 continue;
             }
 
-            let (sound_enabled, dismiss_after_mirror) = state
+            let (enabled, sound_enabled, dismiss_after_mirror) = state
                 .settings
                 .lock()
                 .map(|settings| {
                     (
+                        settings.persistent_notifications_enabled,
                         settings.notification_sound_enabled,
                         settings.dismiss_mirrored_windows_notifications,
                     )
                 })
-                .unwrap_or((true, false));
+                .unwrap_or((true, true, false));
+            if !enabled {
+                return;
+            }
             let _ = add_notification(
                 app,
                 state,
@@ -3394,6 +3478,7 @@ mod tests {
         let settings = normalize_settings(serde_json::from_str::<AppSettings>(raw).unwrap());
 
         assert!(settings.run_high_priority);
+        assert!(settings.persistent_notifications_enabled);
         assert!(!settings.native_notification_enabled);
         assert!(settings.dismiss_mirrored_windows_notifications);
         assert_eq!(
@@ -3417,6 +3502,7 @@ mod tests {
         let settings = serde_json::from_str::<AppSettings>(r#"{"enableTrayIcon":false}"#).unwrap();
 
         assert!(!settings.enable_tray_icon);
+        assert!(settings.persistent_notifications_enabled);
         assert_eq!(settings.close_behavior, CloseBehavior::MinimizeToTray);
         assert_eq!(
             settings.notification_sound_preset,
